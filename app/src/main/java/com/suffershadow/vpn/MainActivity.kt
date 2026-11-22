@@ -200,3 +200,156 @@ fun VpnScreen() {
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = current?.name ?: tx("Sunucu seçilmedi", "Serwer saýlanmady"),
+            color = Color.LightGray,
+            fontSize = 14.sp
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = tx("Sunucular", "Serwerler") + " (${servers.size})",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = { servers.forEach { measure(it) } }) {
+                Text(tx("Yenile", "Täzele"))
+            }
+        }
+
+        if (servers.isEmpty()) {
+            Text(
+                text = tx("Henüz sunucu yok. Aşağıdan link ekle.",
+                    "Heniz serwer ýok. Aşakdan link goş."),
+                color = Color.Gray,
+                fontSize = 13.sp
+            )
+        }
+
+        servers.forEachIndexed { index, s ->
+            val p = pings[s.link]
+            val isSel = index == selected
+            val statusText = when {
+                p == null -> "—"
+                p == -2 -> "..."
+                p == -1 -> tx("Çalışmıyor", "Işlemeýär")
+                else -> tx("Çalışıyor", "Işleýär") + " • $p ms"
+            }
+            val statusColor = when {
+                p == null || p == -2 -> Color.Gray
+                p == -1 -> Color(0xFFFF6B6B)
+                p < 150 -> Color(0xFF00FFAA)
+                p < 400 -> Color(0xFFFFD54F)
+                else -> Color(0xFFFF9800)
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isSel) Color(0xFF2A1B5E) else Color(0xFF1A1A22))
+                    .clickable {
+                        selected = index
+                        save()
+                    }
+                    .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = s.name,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = statusText,
+                        color = statusColor,
+                        fontSize = 13.sp
+                    )
+                }
+                TextButton(onClick = {
+                    pings.remove(s.link)
+                    servers.removeAt(index)
+                    if (selected >= servers.size) {
+                        selected = if (servers.isEmpty()) 0 else servers.size - 1
+                    }
+                    save()
+                }) {
+                    Text(tx("Sil", "Poz"), color = Color(0xFFFF6B6B))
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            label = {
+                Text(tx("vless:// veya ss:// linkleri (her satıra bir tane)",
+                    "vless:// ýa-da ss:// linkler (her setire bir)"))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 5
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                val text = clipboard.getText()?.text ?: ""
+                if (text.isNotEmpty()) input = text
+            }) {
+                Text(tx("Yapıştır", "Ýelimle"))
+            }
+            Button(onClick = {
+                var added = 0
+                input.split("\n").forEach { line ->
+                    val s = parseServer(line)
+                    if (s != null && servers.none { it.link == s.link }) {
+                        servers.add(s)
+                        measure(s)
+                        added++
+                    }
+                }
+                if (added > 0) {
+                    input = ""
+                    save()
+                    message = if (lang == "tm") "$added serwer goşuldy" else "$added sunucu eklendi"
+                } else {
+                    message = tx("Eklenemedi. Link geçersiz ya da zaten var",
+                        "Goşup bolmady. Link nädogry ýa-da eýýäm bar")
+                }
+            }) {
+                Text(tx("Ekle", "Goş"))
+            }
+        }
+        if (message.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = message, color = Color.LightGray, fontSize = 13.sp)
+        }
+        Spacer(modifier = Modifier.height(30.dp))
+    }
+}
+
+@Composable
+fun SufferShadowTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = Color(0xFF6200EA),
+            background = Color(0xFF0F0F13)
+        ),
+        content = content
+    )
+}
