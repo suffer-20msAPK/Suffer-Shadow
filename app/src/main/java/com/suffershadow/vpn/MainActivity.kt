@@ -3,12 +3,15 @@ package com.suffershadow.vpn
 
 import android.content.Context
 import android.os.Bundle
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,6 +25,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.URLDecoder
+import kotlin.concurrent.thread
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,25 +46,45 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-fun describeLink(link: String): String? {
-    val l = link.trim().substringBefore("#")
+data class Server(val link: String, val name: String, val host: String, val port: Int)
+
+fun parseServer(raw: String): Server? {
+    val link = raw.trim()
     return try {
+        val name = if (link.contains("#"))
+            URLDecoder.decode(link.substringAfter("#"), "UTF-8") else ""
+        val body = link.substringBefore("#")
+        val hostPort: String
         when {
-            l.startsWith("vless://") -> {
-                val hostPort = l.substringAfter("@").substringBefore("?")
-                if (hostPort.contains(":")) "VLESS  •  $hostPort" else null
+            body.startsWith("vless://") -> {
+                hostPort = body.substringAfter("@").substringBefore("?").substringBefore("/")
             }
-            l.startsWith("ss://") -> {
-                if (l.contains("@")) {
-                    "Shadowsocks  •  " + l.substringAfter("@").substringBefore("?")
+            body.startsWith("ss://") -> {
+                val rest = body.removePrefix("ss://").substringBefore("?")
+                hostPort = if (rest.contains("@")) {
+                    rest.substringAfter("@").substringBefore("/")
                 } else {
-                    "Shadowsocks"
+                    val fixed = rest.replace('-', '+').replace('_', '/')
+                    String(Base64.decode(fixed, Base64.DEFAULT)).substringAfter("@")
                 }
             }
-            else -> null
+            else -> return null
         }
+        val host = hostPort.substringBeforeLast(":")
+        val port = hostPort.substringAfterLast(":").trim().toInt()
+        if (host.isEmpty()) null else Server(link, name.ifEmpty { host }, host, port)
     } catch (e: Exception) {
         null
+    }
+}
+
+fun pingServer(s: Server): Int {
+    return try {
+        val start = System.nanoTime()
+        Socket().use { it.connect(InetSocketAddress(s.host, s.port), 3000) }
+        ((System.nanoTime() - start) / 1_000_000).toInt()
+    } catch (e: Exception) {
+        -1
     }
 }
 
@@ -67,21 +94,49 @@ fun VpnScreen() {
     val clipboard = LocalClipboardManager.current
     val prefs = remember { context.getSharedPreferences("suffer", Context.MODE_PRIVATE) }
 
-    var savedLink by remember { mutableStateOf(prefs.getString("link", "") ?: "") }
-    var input by remember { mutableStateOf(savedLink) }
+    val servers = remember {
+        val list = mutableStateListOf<Server>()
+        var saved = prefs.getString("links", "") ?: ""
+        if (saved.isEmpty()) saved = prefs.getString("link", "") ?: ""
+        saved.split("\n").forEach { l -> parseServer(l)?.let { list.add(it) } }
+        list
+    }
+    val pings = remember { mutableStateMapOf<String, Int>() }
+    var selected by remember { mutableStateOf(prefs.getInt("sel", 0)) }
+    var input by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var isConnected by remember { mutableStateOf(false) }
 
-    val summary = describeLink(savedLink)
+    val save: () -> Unit = {
+        prefs.edit()
+            .putString("links", servers.joinToString("\n") { it.link })
+            .putInt("sel", selected)
+            .apply()
+    }
+
+    val measure: (Server) -> Unit = { s ->
+        pings[s.link] = -2
+        thread {
+            val r = pingServer(s)
+            pings[s.link] = r
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        servers.forEach { measure(it) }
+    }
+
+    if (selected >= servers.size) selected = if (servers.isEmpty()) 0 else servers.size - 1
+    val current = servers.getOrNull(selected)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+            .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(30.dp))
         Text(
             text = "SUFFER SHADOW",
             color = Color.White,
@@ -91,51 +146,17 @@ fun VpnScreen() {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = if (isConnected) "Bağlantı Güvenli" else "Ne zaman hazırsın?",
+            text = if (isConnected) "Test modu (gerçek tünel henüz yok)" else "Ne zaman hazırsın?",
             color = if (isConnected) Color(0xFF00FFAA) else Color.Gray,
-            fontSize = 16.sp
+            fontSize = 15.sp
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        OutlinedTextField(
-            value = input,
-            onValueChange = { input = it },
-            label = { Text("vless:// veya ss:// linki") },
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 4
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                val text = clipboard.getText()?.text ?: ""
-                if (text.isNotEmpty()) input = text
-            }) {
-                Text("Yapıştır")
-            }
-            Button(onClick = {
-                if (describeLink(input) != null) {
-                    savedLink = input.trim()
-                    prefs.edit().putString("link", savedLink).apply()
-                    message = "Link kaydedildi"
-                } else {
-                    message = "Link tanınmadı. vless:// veya ss:// ile başlamalı"
-                }
-            }) {
-                Text("Kaydet")
-            }
-        }
-        if (message.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = message, color = Color.LightGray, fontSize = 13.sp)
-        }
-
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(240.dp)
+                .size(200.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
@@ -146,8 +167,8 @@ fun VpnScreen() {
         ) {
             Button(
                 onClick = { isConnected = !isConnected },
-                enabled = summary != null,
-                modifier = Modifier.size(170.dp),
+                enabled = current != null,
+                modifier = Modifier.size(140.dp),
                 shape = CircleShape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isConnected) Color(0xFF00FFAA) else Color(0xFF6200EA)
@@ -155,19 +176,145 @@ fun VpnScreen() {
             ) {
                 Text(
                     text = if (isConnected) "KAPAT" else "BAĞLAN",
-                    fontSize = 22.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = summary ?: "Henüz link eklenmedi",
+            text = current?.name ?: "Sunucu seçilmedi",
             color = Color.LightGray,
             fontSize = 14.sp
         )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Sunucular (${servers.size})",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = { servers.forEach { measure(it) } }) {
+                Text("Ping Ölç")
+            }
+        }
+
+        if (servers.isEmpty()) {
+            Text(
+                text = "Henüz sunucu yok. Aşağıdan link ekle.",
+                color = Color.Gray,
+                fontSize = 13.sp
+            )
+        }
+
+        servers.forEachIndexed { index, s ->
+            val p = pings[s.link]
+            val isSel = index == selected
+            val pingText = when {
+                p == null -> "—"
+                p == -2 -> "..."
+                p == -1 -> "Zaman aşımı"
+                else -> "$p ms"
+            }
+            val pingColor = when {
+                p == null || p == -2 -> Color.Gray
+                p == -1 -> Color(0xFFFF6B6B)
+                p < 150 -> Color(0xFF00FFAA)
+                p < 400 -> Color(0xFFFFD54F)
+                else -> Color(0xFFFF9800)
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isSel) Color(0xFF2A1B5E) else Color(0xFF1A1A22))
+                    .clickable {
+                        selected = index
+                        save()
+                    }
+                    .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = s.name,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = (if (s.link.startsWith("vless")) "VLESS" else "SS") +
+                                "  •  " + s.host + ":" + s.port,
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                }
+                Text(text = pingText, color = pingColor, fontSize = 14.sp)
+                TextButton(onClick = {
+                    pings.remove(s.link)
+                    servers.removeAt(index)
+                    if (selected >= servers.size) {
+                        selected = if (servers.isEmpty()) 0 else servers.size - 1
+                    }
+                    save()
+                }) {
+                    Text("Sil", color = Color(0xFFFF6B6B))
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            label = { Text("vless:// veya ss:// linkleri (her satıra bir tane)") },
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 5
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                val text = clipboard.getText()?.text ?: ""
+                if (text.isNotEmpty()) input = text
+            }) {
+                Text("Yapıştır")
+            }
+            Button(onClick = {
+                var added = 0
+                input.split("\n").forEach { line ->
+                    val s = parseServer(line)
+                    if (s != null && servers.none { it.link == s.link }) {
+                        servers.add(s)
+                        measure(s)
+                        added++
+                    }
+                }
+                if (added > 0) {
+                    input = ""
+                    save()
+                    message = "$added sunucu eklendi"
+                } else {
+                    message = "Eklenemedi. Link geçersiz ya da zaten var"
+                }
+            }) {
+                Text("Ekle")
+            }
+        }
+        if (message.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = message, color = Color.LightGray, fontSize = 13.sp)
+        }
         Spacer(modifier = Modifier.height(30.dp))
     }
 }
