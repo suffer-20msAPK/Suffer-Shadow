@@ -94,6 +94,9 @@ fun VpnScreen() {
     val clipboard = LocalClipboardManager.current
     val prefs = remember { context.getSharedPreferences("suffer", Context.MODE_PRIVATE) }
 
+    var lang by remember { mutableStateOf(prefs.getString("lang", "tr") ?: "tr") }
+    val tx: (String, String) -> String = { trText, tmText -> if (lang == "tm") tmText else trText }
+
     val servers = remember {
         val list = mutableStateListOf<Server>()
         var saved = prefs.getString("links", "") ?: ""
@@ -136,7 +139,23 @@ fun VpnScreen() {
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(30.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            val setLang: (String) -> Unit = { l ->
+                lang = l
+                prefs.edit().putString("lang", l).apply()
+            }
+            TextButton(onClick = { setLang("tr") }) {
+                Text("TR", color = if (lang == "tr") Color(0xFF00FFAA) else Color.Gray)
+            }
+            TextButton(onClick = { setLang("tm") }) {
+                Text("TM", color = if (lang == "tm") Color(0xFF00FFAA) else Color.Gray)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
         Text(
             text = "SUFFER SHADOW",
             color = Color.White,
@@ -146,7 +165,9 @@ fun VpnScreen() {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = if (isConnected) "Test modu (gerçek tünel henüz yok)" else "Ne zaman hazırsın?",
+            text = if (isConnected)
+                tx("Test modu (gerçek tünel henüz yok)", "Synag režimi (hakyky tunel entek ýok)")
+            else tx("Ne zaman hazırsın?", "Haçan taýynsyň?"),
             color = if (isConnected) Color(0xFF00FFAA) else Color.Gray,
             fontSize = 15.sp
         )
@@ -175,157 +196,7 @@ fun VpnScreen() {
                 )
             ) {
                 Text(
-                    text = if (isConnected) "KAPAT" else "BAĞLAN",
+                    text = if (isConnected) tx("KAPAT", "ÖÇÜR") else tx("BAĞLAN", "GOŞUL"),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = current?.name ?: "Sunucu seçilmedi",
-            color = Color.LightGray,
-            fontSize = 14.sp
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Sunucular (${servers.size})",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = { servers.forEach { measure(it) } }) {
-                Text("Ping Ölç")
-            }
-        }
-
-        if (servers.isEmpty()) {
-            Text(
-                text = "Henüz sunucu yok. Aşağıdan link ekle.",
-                color = Color.Gray,
-                fontSize = 13.sp
-            )
-        }
-
-        servers.forEachIndexed { index, s ->
-            val p = pings[s.link]
-            val isSel = index == selected
-            val pingText = when {
-                p == null -> "—"
-                p == -2 -> "..."
-                p == -1 -> "Zaman aşımı"
-                else -> "$p ms"
-            }
-            val pingColor = when {
-                p == null || p == -2 -> Color.Gray
-                p == -1 -> Color(0xFFFF6B6B)
-                p < 150 -> Color(0xFF00FFAA)
-                p < 400 -> Color(0xFFFFD54F)
-                else -> Color(0xFFFF9800)
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSel) Color(0xFF2A1B5E) else Color(0xFF1A1A22))
-                    .clickable {
-                        selected = index
-                        save()
-                    }
-                    .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = s.name,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = (if (s.link.startsWith("vless")) "VLESS" else "SS") +
-                                "  •  " + s.host + ":" + s.port,
-                        color = Color.Gray,
-                        fontSize = 12.sp
-                    )
-                }
-                Text(text = pingText, color = pingColor, fontSize = 14.sp)
-                TextButton(onClick = {
-                    pings.remove(s.link)
-                    servers.removeAt(index)
-                    if (selected >= servers.size) {
-                        selected = if (servers.isEmpty()) 0 else servers.size - 1
-                    }
-                    save()
-                }) {
-                    Text("Sil", color = Color(0xFFFF6B6B))
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        OutlinedTextField(
-            value = input,
-            onValueChange = { input = it },
-            label = { Text("vless:// veya ss:// linkleri (her satıra bir tane)") },
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 5
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                val text = clipboard.getText()?.text ?: ""
-                if (text.isNotEmpty()) input = text
-            }) {
-                Text("Yapıştır")
-            }
-            Button(onClick = {
-                var added = 0
-                input.split("\n").forEach { line ->
-                    val s = parseServer(line)
-                    if (s != null && servers.none { it.link == s.link }) {
-                        servers.add(s)
-                        measure(s)
-                        added++
-                    }
-                }
-                if (added > 0) {
-                    input = ""
-                    save()
-                    message = "$added sunucu eklendi"
-                } else {
-                    message = "Eklenemedi. Link geçersiz ya da zaten var"
-                }
-            }) {
-                Text("Ekle")
-            }
-        }
-        if (message.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = message, color = Color.LightGray, fontSize = 13.sp)
-        }
-        Spacer(modifier = Modifier.height(30.dp))
-    }
-}
-
-@Composable
-fun SufferShadowTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = Color(0xFF6200EA),
-            background = Color(0xFF0F0F13)
-        ),
-        content = content
-    )
-}
