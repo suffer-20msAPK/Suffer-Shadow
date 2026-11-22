@@ -108,7 +108,10 @@ fun VpnScreen() {
     var selected by remember { mutableStateOf(prefs.getInt("sel", 0)) }
     var input by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
-    var isConnected by remember { mutableStateOf(false) }
+
+    val toggleVpn = rememberVpnToggle { servers.getOrNull(selected) }
+    val isConnected = VpnState.status == VpnState.CONNECTED
+    val isBusy = VpnState.status == VpnState.CONNECTING
 
     val save: () -> Unit = {
         prefs.edit()
@@ -165,10 +168,13 @@ fun VpnScreen() {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = if (isConnected)
-                tx("Test modu (gerçek tünel henüz yok)", "Synag režimi (hakyky tunel entek ýok)")
-            else tx("Ne zaman hazırsın?", "Haçan taýynsyň?"),
-            color = if (isConnected) Color(0xFF00FFAA) else Color.Gray,
+            text = vpnStatusText(lang),
+            color = when {
+                VpnState.status == VpnState.ERROR -> Color(0xFFFF6B6B)
+                isConnected && VpnState.delayMs == -2 -> Color(0xFFFFD54F)
+                isConnected -> Color(0xFF00FFAA)
+                else -> Color.Gray
+            },
             fontSize = 15.sp
         )
 
@@ -187,7 +193,7 @@ fun VpnScreen() {
                 )
         ) {
             Button(
-                onClick = { isConnected = !isConnected },
+                onClick = { toggleVpn() },
                 enabled = current != null,
                 modifier = Modifier.size(140.dp),
                 shape = CircleShape,
@@ -196,7 +202,7 @@ fun VpnScreen() {
                 )
             ) {
                 Text(
-                    text = if (isConnected) tx("KAPAT", "ÖÇÜR") else tx("BAĞLAN", "GOŞUL"),
+                    text = if (isConnected || isBusy) tx("KAPAT", "ÖÇÜR") else tx("BAĞLAN", "GOŞUL"),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
@@ -241,18 +247,26 @@ fun VpnScreen() {
         servers.forEachIndexed { index, s ->
             val p = pings[s.link]
             val isSel = index == selected
-            val statusText = when {
+            val real = isSel && isConnected
+            var statusText = when {
                 p == null -> "—"
                 p == -2 -> "..."
                 p == -1 -> tx("Çalışmıyor", "Işlemeýär")
                 else -> tx("Çalışıyor", "Işleýär") + " • $p ms"
             }
-            val statusColor = when {
+            var statusColor = when {
                 p == null || p == -2 -> Color.Gray
                 p == -1 -> Color(0xFFFF6B6B)
                 p < 150 -> Color(0xFF00FFAA)
                 p < 400 -> Color(0xFFFFD54F)
                 else -> Color(0xFFFF9800)
+            }
+            if (real && VpnState.delayMs >= 0) {
+                statusText = tx("Bağlı, gerçek: ", "Birikdi, hakyky: ") + VpnState.delayMs + " ms"
+                statusColor = Color(0xFF00FFAA)
+            } else if (real && VpnState.delayMs == -2) {
+                statusText = tx("Bağlı ama internet yok", "Birikdi, emma internet ýok")
+                statusColor = Color(0xFFFF6B6B)
             }
             Row(
                 modifier = Modifier
