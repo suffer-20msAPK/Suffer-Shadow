@@ -25,7 +25,13 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
-        gradle-version: '8.7' # Gradle sürümünü burada da belirtiyoruz
+        gradle-version: '8.7'
+
+    - name: Download Xray core
+      run: |
+        mkdir -p app/libs
+        curl -fL --retry 3 -o app/libs/libv2ray.aar https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.11.9/libv2ray.aar
+        ls -l app/libs
 
     - name: Build with Gradle
       run: gradle assembleDebug
