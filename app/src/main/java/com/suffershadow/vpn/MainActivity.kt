@@ -21,6 +21,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -705,17 +706,7 @@ private fun FeaturesTab(
                     onValueChange = onInput,
                     label = { Text(if (tm) "vless:// ýa-da ss://" else "vless:// veya ss://") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 3,
-                    maxLines = 5,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PurpleLight,
-                        unfocusedBorderColor = BorderPurple,
-                        focusedLabelColor = PurpleLight,
-                        cursorColor = PurpleLight,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    )
+                    maxLines = 5
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -776,7 +767,7 @@ private fun FeaturesTab(
                     checked = soundEnabled,
                     onCheckedChange = { feedback(FeedbackType.TAP); onSound(it) }
                 )
-                HorizontalDivider(color = Color.White.copy(alpha = 0.07f))
+                Spacer(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.07f)))
                 PreferenceSwitchRow(
                     title = if (tm) "Titreşim" else "Titreşim",
                     subtitle = if (tm) "Dolandyryşda ýeňil duýgur seslenme" else "Dokunma ve bağlantıda hafif dokunsal geri bildirim",
@@ -943,8 +934,7 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
                     value = editedName,
                     onValueChange = { editedName = it },
                     singleLine = true,
-                    label = { Text("Kullanıcı adı") },
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PurpleLight, cursorColor = PurpleLight)
+                    label = { Text("Kullanıcı adı") }
                 )
             },
             confirmButton = {
