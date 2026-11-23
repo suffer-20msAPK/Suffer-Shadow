@@ -22,6 +22,7 @@ import libv2ray.CoreController
 import libv2ray.Libv2ray
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -35,9 +36,18 @@ object VpnState {
     const val CONNECTED = 2
     const val ERROR = 3
 
+    const val ST_START = 1
+    const val ST_SERVER = 2
+    const val ST_VERIFY = 3
+    const val ST_DONE = 4
+    const val ST_FAILED = 5
+
     var status by mutableStateOf(IDLE)
+    var stage by mutableStateOf(0)
     var delayMs by mutableStateOf(-1)
     var error by mutableStateOf("")
+    var failCode by mutableStateOf(0)
+    var logLines by mutableStateOf("")
 }
 
 object XrayConfig {
@@ -57,7 +67,7 @@ object XrayConfig {
         return String(Base64.decode(t, Base64.DEFAULT))
     }
 
-    fun build(link: String): String {
+    fun build(link: String, logPath: String): String {
         val body = link.trim().substringBefore("#")
         val outbound = when {
             body.startsWith("vless://") -> vless(body)
@@ -66,7 +76,10 @@ object XrayConfig {
         }
 
         val root = JSONObject()
-        root.put("log", JSONObject().put("loglevel", "warning"))
+        root.put(
+            "log",
+            JSONObject().put("loglevel", "info").put("access", "none").put("error", logPath)
+        )
 
         val tun = JSONObject()
         tun.put("tag", "tun-in")
@@ -225,6 +238,9 @@ class SufferVpnService : VpnService() {
         showNotification()
         VpnState.error = ""
         VpnState.delayMs = -1
+        VpnState.failCode = 0
+        VpnState.logLines = ""
+        VpnState.stage = VpnState.ST_START
         VpnState.status = VpnState.CONNECTING
         thread { startVpn(link) }
         return START_NOT_STICKY
@@ -232,7 +248,12 @@ class SufferVpnService : VpnService() {
 
     private fun startVpn(link: String) {
         try {
-            val config = XrayConfig.build(link)
+            val logFile = File(filesDir, "xray.log")
+            try {
+                logFile.delete()
+            } catch (e: Exception) {
+            }
+            val config = XrayConfig.build(link, logFile.absolutePath)
 
             val b = Builder()
             b.setSession("Suffer Shadow")
@@ -254,8 +275,7 @@ class SufferVpnService : VpnService() {
             controller = c
             c.startLoop(config, p.fd)
 
-            VpnState.status = VpnState.CONNECTED
-            measureDelay()
+            verify(link)
         } catch (e: Exception) {
             VpnState.error = e.message ?: "bilinmeyen hata"
             cleanup()
@@ -264,25 +284,86 @@ class SufferVpnService : VpnService() {
         }
     }
 
-    private fun measureDelay() {
-        var result = -2
-        for (i in 1..2) {
-            try {
-                val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))
-                val t0 = System.nanoTime()
-                val conn = URL("http://connectivitycheck.gstatic.com/generate_204")
-                    .openConnection(proxy) as HttpURLConnection
-                conn.connectTimeout = 8000
-                conn.readTimeout = 8000
-                val code = conn.responseCode
-                conn.disconnect()
-                val ms = ((System.nanoTime() - t0) / 1_000_000).toInt()
-                result = if (code == 204 || code == 200) ms else -2
-            } catch (e: Exception) {
-                result = -2
-            }
+    private fun alive(): Boolean = controller != null
+
+    private fun verify(link: String) {
+        // 1) Sunucu portuna doğrudan TCP erişimi (uygulama VPN dışında, yani gerçek ağ yolu)
+        val srv = parseServer(link)
+        val tcp = if (srv != null) pingServer(srv) else -1
+        if (!alive()) return
+        if (tcp < 0) {
+            fail(1)
+            return
         }
-        VpnState.delayMs = result
+        VpnState.stage = VpnState.ST_SERVER
+        Thread.sleep(600)
+
+        // 2) Tünel (Xray) üzerinden gerçek internet isteği
+        VpnState.stage = VpnState.ST_VERIFY
+        val ipMs = httpViaProxy("http://1.1.1.1/cdn-cgi/trace")
+        if (!alive()) return
+        if (ipMs < 0) {
+            fail(2)
+            return
+        }
+        var ms = httpViaProxy("http://connectivitycheck.gstatic.com/generate_204")
+        if (!alive()) return
+        if (ms < 0) {
+            fail(3)
+            return
+        }
+        val ms2 = httpViaProxy("http://connectivitycheck.gstatic.com/generate_204")
+        if (ms2 >= 0) ms = ms2
+        if (!alive()) return
+
+        VpnState.delayMs = ms
+        VpnState.stage = VpnState.ST_DONE
+        VpnState.status = VpnState.CONNECTED
+    }
+
+    private fun httpViaProxy(url: String): Int {
+        return try {
+            val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))
+            val t0 = System.nanoTime()
+            val conn = URL(url).openConnection(proxy) as HttpURLConnection
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.instanceFollowRedirects = false
+            val code = conn.responseCode
+            conn.disconnect()
+            if (code in 200..399) ((System.nanoTime() - t0) / 1_000_000).toInt() else -1
+        } catch (e: Exception) {
+            -1
+        }
+    }
+
+    private fun fail(code: Int) {
+        if (!alive()) return
+        try {
+            Thread.sleep(300)
+        } catch (e: Exception) {
+        }
+        VpnState.failCode = code
+        VpnState.logLines = logTail()
+        VpnState.delayMs = -2
+        VpnState.stage = VpnState.ST_FAILED
+    }
+
+    private fun logTail(): String {
+        return try {
+            val f = File(filesDir, "xray.log")
+            if (!f.exists()) {
+                ""
+            } else {
+                val keys = listOf("failed", "rror", "arning", "reject", "refused", "timeout")
+                val lines = f.readLines().filter { l -> keys.any { k -> l.contains(k) } }
+                lines.takeLast(4).joinToString("\n") { l ->
+                    if (l.length > 170) l.takeLast(170) else l
+                }
+            }
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     private fun cleanup() {
@@ -299,7 +380,10 @@ class SufferVpnService : VpnService() {
         if (VpnState.status != VpnState.ERROR) {
             VpnState.status = VpnState.IDLE
         }
+        VpnState.stage = 0
         VpnState.delayMs = -1
+        VpnState.failCode = 0
+        VpnState.logLines = ""
         try {
             stopForeground(true)
         } catch (e: Exception) {
@@ -380,14 +464,28 @@ fun rememberVpnToggle(getServer: () -> Server?): () -> Unit {
 fun vpnStatusText(lang: String): String {
     val tm = lang == "tm"
     return when (VpnState.status) {
-        VpnState.CONNECTING -> if (tm) "Birigýär..." else "Bağlanıyor..."
-        VpnState.CONNECTED -> when {
-            VpnState.delayMs >= 0 ->
-                (if (tm) "Birikdi • " else "Bağlandı • ") + VpnState.delayMs + " ms"
-            VpnState.delayMs == -2 ->
-                if (tm) "Birikdi, emma internet ýok" else "Bağlandı ama internet yok"
-            else -> if (tm) "Birikdi, barlanýar..." else "Bağlandı, test ediliyor..."
+        VpnState.CONNECTING -> when (VpnState.stage) {
+            VpnState.ST_SERVER ->
+                if (tm) "Serwere birikdi" else "Sunucuya bağlandı"
+            VpnState.ST_VERIFY ->
+                if (tm) "Internet barlanýar..." else "İnternet erişimi doğrulanıyor..."
+            VpnState.ST_FAILED -> {
+                val reason = when (VpnState.failCode) {
+                    1 -> if (tm) "Serwer portuna göni baglanyp bolmady (tor päsgelçiligi ýa-da ýalňyş link)"
+                    else "Sunucu portuna doğrudan ulaşılamıyor (ağ engeli ya da hatalı link)"
+                    2 -> if (tm) "Serwer porty açyk, emma tunel maglumat geçirmeýär (link möhleti ýa-da şifrleme?)"
+                    else "Sunucu portu açık ama tünel veri geçirmiyor (link süresi ya da şifreleme?)"
+                    else -> if (tm) "Internet bar, emma domen atlary çözülmeýär (DNS)"
+                    else "İnternet var ama alan adları çözülemiyor (DNS sorunu)"
+                }
+                val head = (if (tm) "Birikme näsazlygy [" else "Bağlantı hatası [") +
+                        VpnState.failCode + "]\n" + reason
+                if (VpnState.logLines.isNotEmpty()) head + "\n\n" + VpnState.logLines else head
+            }
+            else -> if (tm) "Birigýär..." else "Bağlanıyor..."
         }
+        VpnState.CONNECTED ->
+            (if (tm) "Birikme üstünlikli • " else "Bağlantı başarılı • ") + VpnState.delayMs + " ms"
         VpnState.ERROR -> (if (tm) "Ýalňyşlyk: " else "Hata: ") + VpnState.error
         else -> if (tm) "Haçan taýynsyň?" else "Ne zaman hazırsın?"
     }
