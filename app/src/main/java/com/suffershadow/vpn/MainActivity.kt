@@ -1170,7 +1170,7 @@ private fun AnimatedSurface(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(shape)
             .then(if (brush != null) Modifier.background(brush, shape) else Modifier.background(color, shape))
-            .then(clickModifier            .then(clickModifier),
+            .then(clickModifier),
         contentAlignment = contentAlignment,
         content = content
     )
