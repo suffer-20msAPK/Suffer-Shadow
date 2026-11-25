@@ -50,6 +50,8 @@ object VpnState {
     var delayMs by mutableStateOf(-1)
     var error by mutableStateOf("")
     var failCode by mutableStateOf(0)
+    /** Son bağlantı denemesi başarısız oldu (ayrıntılar yalnızca hata ayıklama günlüğünde). */
+    var lastFailed by mutableStateOf(false)
     var logLines by mutableStateOf("")
 
     // Gerçek trafik: bu uygulamanın fiziksel ağ üzerinden VPN sunucusuyla yaptığı veri (bayt/sn ve oturum toplamı)
@@ -251,6 +253,7 @@ class SufferVpnService : VpnService() {
         }
         showNotification()
         VpnState.error = ""
+        VpnState.lastFailed = false
         VpnState.delayMs = -1
         VpnState.failCode = 0
         VpnState.logLines = ""
@@ -310,9 +313,9 @@ class SufferVpnService : VpnService() {
 
             verify(link)
         } catch (e: Exception) {
-            VpnState.error = e.message ?: "bilinmeyen hata"
+            DebugLog.add(this, "vpn start: " + (e.message ?: e.javaClass.simpleName))
+            VpnState.lastFailed = true
             cleanup()
-            VpnState.status = VpnState.ERROR
             stopSelf()
         }
     }
@@ -335,32 +338,35 @@ class SufferVpnService : VpnService() {
 
         // 2) Tünel (Xray) üzerinden gerçek internet isteği: birden çok adresten biri yanıt verirse bağlantı gerçektir
         VpnState.stage = VpnState.ST_VERIFY
-        val urls = listOf(
-            "http://connectivitycheck.gstatic.com/generate_204",
-            "http://cp.cloudflare.com/generate_204",
-            "http://www.google.com/generate_204",
-            "http://detectportal.firefox.com/success.txt",
-            "http://www.msftconnecttest.com/connecttest.txt",
-            "http://1.1.1.1/cdn-cgi/trace"
-        )
         var ms = -1
-        for (u in urls) {
-            if (!alive()) return
-            ms = httpViaProxy(u)
+        // Çekirdeğin ayağa kalkması birkaç saniye sürebilir: liste en fazla 2 tur denenir
+        for (round in 0 until 2) {
+            for (u in PROBE_URLS) {
+                if (!alive()) return
+                ms = httpViaProxy(u)
+                if (ms >= 0) break
+            }
             if (ms >= 0) break
+            try {
+                Thread.sleep(1500L)
+            } catch (e: Exception) {
+            }
         }
         if (!alive()) return
         if (ms < 0) {
             fail(if (tcp < 0) 1 else 2)
             return
         }
-        val ms2 = httpViaProxy("http://connectivitycheck.gstatic.com/generate_204")
+        val ms2 = httpViaProxy(PROBE_URLS[0])
         if (ms2 >= 0) ms = ms2
         if (!alive()) return
 
         // Yeni oturum: 2 saatlik süre servis tarafında da takip edilir (uygulama kapalıyken de dolar)
-        getSharedPreferences("suffer", Context.MODE_PRIVATE).edit()
-            .putLong("session_end", System.currentTimeMillis() + 2L * 60L * 60L * 1000L)
+        val sp = getSharedPreferences("suffer", Context.MODE_PRIVATE)
+        val bonus = sp.getLong("bonus_ms", 0L).coerceAtLeast(0L)
+        sp.edit()
+            .putLong("session_end", System.currentTimeMillis() + 2L * 60L * 60L * 1000L + bonus)
+            .putLong("bonus_ms", 0L)
             .putBoolean("session_expired", false)
             .apply()
 
@@ -391,10 +397,17 @@ class SufferVpnService : VpnService() {
             Thread.sleep(300)
         } catch (e: Exception) {
         }
-        VpnState.failCode = code
-        VpnState.logLines = logTail()
-        VpnState.delayMs = -2
-        VpnState.stage = VpnState.ST_FAILED
+        val reason = when (code) {
+            1 -> "server port unreachable directly (network block or wrong link)"
+            2 -> "server port open but tunnel passes no data (link expired or encryption/params?)"
+            else -> "internet reachable but names do not resolve (DNS)"
+        }
+        DebugLog.add(this, "vpn verify failed [$code]: $reason")
+        val tail = logTail()
+        if (tail.isNotEmpty()) DebugLog.add(this, "xray: " + tail.replace('\n', ' '))
+        VpnState.lastFailed = true
+        cleanup()
+        stopSelf()
     }
 
     private fun logTail(): String {
@@ -539,6 +552,7 @@ class SufferVpnService : VpnService() {
             var lastProbe = 0L
             var fails = 0
             while (tickerRunning) {
+                var remainText = ""
                 try {
                     val rx = TrafficStats.getUidRxBytes(uid)
                     val tx = TrafficStats.getUidTxBytes(uid)
@@ -575,13 +589,15 @@ class SufferVpnService : VpnService() {
                             break
                         }
 
+                        if (end > 0L) remainText = fmtClock((end - now) / 1000L)
+
                         // Tünel gecikmesini gerçek istekle yenile
                         if (now - lastProbe >= 15000L && !probing) {
                             probing = true
                             lastProbe = now
                             thread {
                                 try {
-                                    val ms = httpViaProxy("http://connectivitycheck.gstatic.com/generate_204")
+                                    val ms = httpViaProxy(PROBE_URLS[0])
                                     if (VpnState.status == VpnState.CONNECTED) {
                                         if (ms >= 0) {
                                             fails = 0
@@ -611,6 +627,7 @@ class SufferVpnService : VpnService() {
                     val small: String
                     if (connected && supported) {
                         big = head + "\n↓ " + fmtSpeed(down) + "\n↑ " + fmtSpeed(up) + "\n\n" +
+                            (if (remainText.isNotEmpty()) (if (tm) "Galan wagt: " else "Kalan süre: ") + remainText + "\n" else "") +
                             (if (tm) "Jemi ýüklenen: " else "Toplam indirilen: ") + fmtBytes(VpnState.rxTotal) + "\n" +
                             (if (tm) "Jemi ugradylan: " else "Toplam yüklenen: ") + fmtBytes(VpnState.txTotal)
                         small = stateText + "  ↓ " + fmtSpeed(down) + "  ↑ " + fmtSpeed(up)
@@ -660,6 +677,18 @@ class SufferVpnService : VpnService() {
         const val EXTRA_LINK = "link"
         const val CHANNEL_ID = "suffer_vpn"
         const val NOTIF_ID = 1
+
+        /**
+         * Tünel doğrulama adresleri. HTTPS kullanılır: targetSdk 33'te HttpURLConnection düz HTTP isteğini
+         * (cleartext) varsayılan olarak reddeder; eski http:// adresleri bu yüzden her seferinde -1 döndürüp
+         * "Bağlanılamadı" hatasına yol açabiliyordu.
+         */
+        val PROBE_URLS = listOf(
+            "https://www.gstatic.com/generate_204",
+            "https://cp.cloudflare.com/generate_204",
+            "https://www.google.com/generate_204",
+            "https://1.1.1.1/cdn-cgi/trace"
+        )
     }
 }
 
@@ -694,35 +723,5 @@ fun rememberVpnToggle(getServer: () -> Server?): () -> Unit {
                 if (intent != null) launcher.launch(intent) else startVpnService(context, s)
             }
         }
-    }
-}
-
-fun vpnStatusText(lang: String): String {
-    val tm = lang == "tm"
-    return when (VpnState.status) {
-        VpnState.CONNECTING -> when (VpnState.stage) {
-            VpnState.ST_SERVER ->
-                if (tm) "Serwere birikdi" else "Sunucuya bağlandı"
-            VpnState.ST_VERIFY ->
-                if (tm) "Internet barlanýar..." else "İnternet erişimi doğrulanıyor..."
-            VpnState.ST_FAILED -> {
-                val reason = when (VpnState.failCode) {
-                    1 -> if (tm) "Serwer portuna göni baglanyp bolmady (tor päsgelçiligi ýa-da ýalňyş link)"
-                    else "Sunucu portuna doğrudan ulaşılamıyor (ağ engeli ya da hatalı link)"
-                    2 -> if (tm) "Serwer porty açyk, emma tunel maglumat geçirmeýär (link möhleti ýa-da şifrleme?)"
-                    else "Sunucu portu açık ama tünel veri geçirmiyor (link süresi ya da şifreleme?)"
-                    else -> if (tm) "Internet bar, emma domen atlary çözülmeýär (DNS)"
-                    else "İnternet var ama alan adları çözülemiyor (DNS sorunu)"
-                }
-                val head = (if (tm) "Birikme näsazlygy [" else "Bağlantı hatası [") +
-                        VpnState.failCode + "]\n" + reason
-                if (VpnState.logLines.isNotEmpty()) head + "\n\n" + VpnState.logLines else head
-            }
-            else -> if (tm) "Birigýär..." else "Bağlanıyor..."
-        }
-        VpnState.CONNECTED ->
-            (if (tm) "Birikme üstünlikli • " else "Bağlantı başarılı • ") + VpnState.delayMs + " ms"
-        VpnState.ERROR -> (if (tm) "Ýalňyşlyk: " else "Hata: ") + VpnState.error
-        else -> if (tm) "Haçan taýynsyň?" else "Ne zaman hazırsın?"
     }
 }
