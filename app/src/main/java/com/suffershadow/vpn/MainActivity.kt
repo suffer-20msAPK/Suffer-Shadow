@@ -281,6 +281,13 @@ fun AppRoot() {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val prefs = remember { context.getSharedPreferences("suffer", Context.MODE_PRIVATE) }
+    var showVipScreen by remember { mutableStateOf(false) }
+var isVipUser by remember { mutableStateOf(false) }
+
+LaunchedEffect(Unit) {
+    val (isVip, _) = RedeemManager.checkVip(context)
+    isVipUser = isVip
+}
 
     var lang by remember { mutableStateOf(prefs.getString("lang", "tr") ?: "tr") }
     var soundEnabled by remember { mutableStateOf(prefs.getBoolean("sound_enabled", true)) }
@@ -553,6 +560,18 @@ fun AppRoot() {
         )
     }
 
+    if (showVipScreen) {
+    VipScreen(
+        prefs = prefs,
+        onVipActivated = {
+            isVipUser = true
+            showVipScreen = false
+        },
+        onDismiss = { showVipScreen = false }
+    )
+    return
+    }
+    
     Scaffold(
         containerColor = BgDark,
         contentColor = Color.White,
@@ -607,9 +626,19 @@ fun AppRoot() {
                     timeLeft = vpnTimeLeft,
                     everConnected = sessionWasConnected,
                     onToggle = {
-                        feedback(if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) FeedbackType.DISCONNECT else FeedbackType.CONNECT)
-                        toggleVpn()
-                    },
+    if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+        feedback(FeedbackType.DISCONNECT)
+        toggleVpn()
+    } else {
+        if (isVipUser) {
+            feedback(FeedbackType.CONNECT)
+            toggleVpn()
+        } else {
+            feedback(FeedbackType.ERROR)
+            showVipScreen = true
+        }
+    }
+},
                     onOpenServers = { feedback(FeedbackType.TAP); showServers = true }
                 )
                 tab == 0 && showServers -> ServersTab(
