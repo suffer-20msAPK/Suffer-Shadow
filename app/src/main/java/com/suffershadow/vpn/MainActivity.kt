@@ -83,27 +83,50 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val BgDark = Color(0xFF080B18)
-private val BgTop = Color(0xFF10152B)
-private val CardBg = Color(0xFF151B33)
-private val CardBg2 = Color(0xFF1B2140)
-private val PurpleMain = Color(0xFF7B20FF)
-private val PurpleLight = Color(0xFFB46BFF)
-private val PurpleDeep = Color(0xFF4210A8)
-private val AccentGreen = Color(0xFF00EFA8)
-private val RedSoft = Color(0xFFFF7185)
-private val TextMuted = Color(0xFFA7AEC8)
-private val BorderPurple = Color(0xFF50308C)
+internal val BgDark = Color(0xFF080B18)
+internal val BgTop = Color(0xFF10152B)
+internal val CardBg = Color(0xFF151B33)
+internal val CardBg2 = Color(0xFF1B2140)
+internal val PurpleMain = Color(0xFF7B20FF)
+internal val PurpleLight = Color(0xFFB46BFF)
+internal val PurpleDeep = Color(0xFF4210A8)
+internal val AccentGreen = Color(0xFF00EFA8)
+internal val RedSoft = Color(0xFFFF7185)
+internal val TextMuted = Color(0xFFA7AEC8)
+internal val BorderPurple = Color(0xFF50308C)
 
 // UZAKTAN SUNUCU LİNKLERİ (BURAYA KENDİ LİNKLERİNİZİ YAPIŞTIRIN)
 private const val SOCIAL_MEDIA_URL = "https://example.com/social.txt" // Sosyal Medya sunucuları için link
 private const val PUBG_URL = "https://example.com/pubg.txt" // PUBG sunucuları için link
 
-private enum class FeedbackType { TAP, CONNECT, DISCONNECT, ERROR }
+internal enum class FeedbackType { TAP, CONNECT, DISCONNECT, ERROR }
+
+/** Kayan panel / bildirimden gelen sekme isteği. tab: 0 Ana Menü, 1 Oyun, 2 Profil. */
+object NavRequest {
+    var seq by mutableStateOf(0)
+    var tab = 0
+    var servers = false
+}
 
 class MainActivity : ComponentActivity() {
+    private fun handleNav(i: Intent?) {
+        if (i != null && i.hasExtra("tab")) {
+            NavRequest.tab = i.getIntExtra("tab", 0).coerceIn(0, 2)
+            NavRequest.servers = i.getBooleanExtra("servers", false)
+            NavRequest.seq++
+            i.removeExtra("tab")
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNav(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleNav(intent)
         setContent {
             SufferShadowTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = BgDark) {
@@ -302,8 +325,22 @@ fun AppRoot() {
 
     val pings = remember { mutableStateMapOf<String, Int>() }
     var selected by remember { mutableStateOf(prefs.getInt("sel", 0)) }
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember { mutableStateOf(0) } // 0 Ana Menü, 1 Oyun, 2 Profil
     var showServers by remember { mutableStateOf(false) }
+
+    // Kayan panel / bildirimden gelen sekme isteği
+    LaunchedEffect(NavRequest.seq) {
+        if (NavRequest.seq > 0) {
+            tab = NavRequest.tab
+            showServers = NavRequest.servers
+        }
+    }
+
+    // Game Booster: kayıtlı durum yüklenir; etkinse servis (yalnızca ön plandayken) yeniden başlatılır
+    LaunchedEffect(Unit) {
+        BoosterState.load(prefs)
+        if (BoosterState.enabled && !BoosterState.serviceRunning) startBoosterService(context)
+    }
     var input by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
 
@@ -327,6 +364,8 @@ fun AppRoot() {
                 prefs.edit().putLong("session_end", end).apply()
             }
             while (VpnState.status == VpnState.CONNECTED) {
+                // Redeem ödülü süreyi uzatabilir: bitiş zamanı her turda yeniden okunur
+                end = prefs.getLong("session_end", end)
                 val left = ((end - System.currentTimeMillis()) / 1000L).toInt()
                 vpnTimeLeft = left.coerceAtLeast(0)
                 if (left <= 0) {
@@ -368,6 +407,15 @@ fun AppRoot() {
 
     val selectedIndex = if (allServers.isEmpty()) -1 else selected.coerceIn(0, allServers.size - 1)
     val current = allServers.getOrNull(selectedIndex)
+
+    // Game Booster servisi aktif sunucuyu buradan okur (ping / jitter / paket kaybı ölçümü)
+    LaunchedEffect(current?.link) {
+        prefs.edit()
+            .putString("active_name", current?.name ?: "")
+            .putString("active_host", current?.host ?: "")
+            .putInt("active_port", current?.port ?: 0)
+            .apply()
+    }
 
     // ---- Oyun araçları durumu (15-20) ----
     val gameState = remember { GameToolsState(prefs) }
@@ -531,21 +579,14 @@ fun AppRoot() {
                 NavigationBarItem(
                     selected = tab == 1,
                     onClick = { feedback(FeedbackType.TAP); tab = 1; showServers = false },
-                    icon = { NavGlyph("settings", if (tab == 1) PurpleLight else TextMuted, Modifier.size(24.dp)) },
-                    label = { Text(if (lang == "tm") "Aýratynlyklar" else "Özellikler", fontSize = 11.sp) },
+                    icon = { NavGlyph("game", if (tab == 1) PurpleLight else TextMuted, Modifier.size(24.dp)) },
+                    label = { Text(if (lang == "tm") "Oýun" else "Oyun", fontSize = 11.sp) },
                     colors = navColors
                 )
                 NavigationBarItem(
                     selected = tab == 2,
                     onClick = { feedback(FeedbackType.TAP); tab = 2; showServers = false },
-                    icon = { NavGlyph("game", if (tab == 2) PurpleLight else TextMuted, Modifier.size(24.dp)) },
-                    label = { Text(if (lang == "tm") "Oýun" else "Oyun", fontSize = 11.sp) },
-                    colors = navColors
-                )
-                NavigationBarItem(
-                    selected = tab == 3,
-                    onClick = { feedback(FeedbackType.TAP); tab = 3; showServers = false },
-                    icon = { NavGlyph("profile", if (tab == 3) PurpleLight else TextMuted, Modifier.size(24.dp)) },
+                    icon = { NavGlyph("profile", if (tab == 2) PurpleLight else TextMuted, Modifier.size(24.dp)) },
                     label = { Text(if (lang == "tm") "Profil" else "Profil", fontSize = 11.sp) },
                     colors = navColors
                 )
@@ -566,14 +607,8 @@ fun AppRoot() {
                     timeLeft = vpnTimeLeft,
                     everConnected = sessionWasConnected,
                     onToggle = {
-                        if (VpnState.stage == VpnState.ST_FAILED) {
-                            feedback(FeedbackType.CONNECT)
-                            stopVpnService(context)
-                            Handler(Looper.getMainLooper()).postDelayed({ toggleVpn() }, 650)
-                        } else {
-                            feedback(if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) FeedbackType.DISCONNECT else FeedbackType.CONNECT)
-                            toggleVpn()
-                        }
+                        feedback(if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) FeedbackType.DISCONNECT else FeedbackType.CONNECT)
+                        toggleVpn()
                     },
                     onOpenServers = { feedback(FeedbackType.TAP); showServers = true }
                 )
@@ -589,8 +624,13 @@ fun AppRoot() {
                     onRefresh = { feedback(FeedbackType.TAP); loadRemoteData(); servers.forEach { measure(it) } },
                     onBack = { feedback(FeedbackType.TAP); showServers = false }
                 )
-                tab == 1 -> FeaturesTab(
+                tab == 1 -> GameToolsTab(
                     lang = lang,
+                    state = gameState,
+                    current = current,
+                    allServers = allServers,
+                    scope = gameScope,
+                    onUseServer = switchToServer,
                     input = input,
                     message = message,
                     soundEnabled = soundEnabled,
@@ -616,15 +656,6 @@ fun AppRoot() {
                     prefs = prefs,
                     feedback = feedback
                 )
-                tab == 2 -> GameToolsTab(
-                    lang = lang,
-                    state = gameState,
-                    current = current,
-                    allServers = allServers,
-                    scope = gameScope,
-                    onUseServer = switchToServer,
-                    feedback = feedback
-                )
                 else -> ProfileTab(prefs = prefs, feedback = feedback)
             }
         }
@@ -642,8 +673,7 @@ private fun HomeTab(
 ) {
     val tm = lang == "tm"
     val connected = VpnState.status == VpnState.CONNECTED
-    val failed = VpnState.stage == VpnState.ST_FAILED || VpnState.status == VpnState.ERROR
-    val busy = VpnState.status == VpnState.CONNECTING && !failed
+    val busy = VpnState.status == VpnState.CONNECTING
     val pulseTransition = rememberInfiniteTransition()
     val pulse by pulseTransition.animateFloat(
         initialValue = 0.97f,
@@ -661,8 +691,7 @@ private fun HomeTab(
     val statusText = when {
         connected -> "$timeString • " + (if (tm) "BIRIKDI" else "BAĞLANILDI")
         busy -> if (tm) "BIRIGÝÄR" else "BAĞLANILIYOR"
-        failed -> if (tm) "Birikdirip bolmady" else "Bağlanılamadı"
-        everConnected -> if (tm) "BIRIKME KESILDI" else "BAĞLANTI KESİLDİ"
+        everConnected || VpnState.lastFailed -> if (tm) "BIRIKME KESILDI" else "BAĞLANTI KESİLDİ"
         else -> if (tm) "Birikdirilmedi" else "Bağlı değil"
     }
 
@@ -675,7 +704,6 @@ private fun HomeTab(
         StatusPill(
             text = statusText,
             color = when {
-                VpnState.status == VpnState.ERROR || VpnState.stage == VpnState.ST_FAILED -> RedSoft
                 connected && VpnState.delayMs >= 0 -> AccentGreen
                 connected -> Color(0xFFFFD166)
                 busy -> PurpleLight
@@ -714,7 +742,6 @@ private fun HomeTab(
                         Text(
                             text = when {
                                 connected -> if (tm) "ÖÇÜR" else "KAPAT"
-                                failed -> if (tm) "GOŞUL" else "BAĞLAN"
                                 busy -> if (tm) "BIRIGÝÄR" else "BAĞLANILIYOR"
                                 else -> if (tm) "GOŞUL" else "BAĞLAN"
                             },
@@ -763,7 +790,7 @@ private fun HomeTab(
                 modifier = Modifier.weight(1f),
                 title = when {
                     connected && VpnState.delayMs >= 0 -> if (tm) "Birikdi" else "Bağlandı"
-                    connected || VpnState.stage == VpnState.ST_FAILED -> if (tm) "Barlaň" else "Kontrol et"
+                    connected -> if (tm) "Barlaň" else "Kontrol et"
                     busy -> if (tm) " garaşýar" else "Bekliyor"
                     else -> if (tm) "Öçük" else "Kapalı"
                 },
@@ -873,7 +900,7 @@ private fun ServersTab(
                     Text(if (tm) "Serwer ýok" else "Henüz sunucu yok", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
                         if (mainTab == 0) (if(tm) "Uzakdan kodlar ýüklenýär..." else "Uzaktan sunucular yükleniyor veya henüz eklenmedi.")
-                        else (if (tm) "Aýratynlyklar bölüminden link goşuň." else "Özellikler bölümünden bağlantı ekleyin."), 
+                        else (if (tm) "Oýun bölüminden link goşuň." else "Oyun sekmesinden bağlantı ekleyin."), 
                         color = TextMuted, fontSize = 13.sp, textAlign = TextAlign.Center
                     )
                 }
@@ -1072,7 +1099,7 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
 }
 
 @Composable
-private fun FeaturesTab(
+private fun GameSettingsSections(
     lang: String,
     input: String,
     message: String,
@@ -1090,12 +1117,8 @@ private fun FeaturesTab(
 ) {
     val tm = lang == "tm"
     val context = LocalContext.current
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
-        Text(if (tm) "Aýratynlyklar" else "Özellikler", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text(if (tm) "Suffer Shadow sazlamalary" else "Suffer Shadow ayarları", color = TextMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(18.dp))
-
-        SectionHeading("01", if (tm) "Link goş" else "Link yapıştır")
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeading("10", if (tm) "Link goş" else "Link yapıştır")
         AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(19.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text(if (tm) "VLESS / Shadowsocks baglanyşyklary" else "VLESS / Shadowsocks bağlantıları", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -1133,10 +1156,10 @@ private fun FeaturesTab(
         }
 
         Spacer(Modifier.height(17.dp))
-        SectionHeading("02", if (tm) "Programma bloklaýjy" else "Uygulama Engelleyici")
+        SectionHeading("11", if (tm) "Programma bloklaýjy" else "Uygulama Engelleyici")
         AppFilterCard(lang = lang, prefs = prefs, feedback = feedback)
         Spacer(Modifier.height(12.dp))
-        SectionHeading("03", if (tm) "Tor arassala" else "Ağ Temizle")
+        SectionHeading("12", if (tm) "Tor arassala" else "Ağ Temizle")
         GameCard {
             Text(
                 if (tm) "Android başga programmalaryň tor maglumatyny pozmaga rugsat bermeýär. Bu ýerde diňe şu programmanyň ölçeg taryhyny arassalap we sistemanyň tor sazlamalaryny açyp bilersiň."
@@ -1165,7 +1188,7 @@ private fun FeaturesTab(
         }
 
         Spacer(Modifier.height(18.dp))
-        SectionHeading("04", if (tm) "Dil sazlamasy" else "Dil Ayarları")
+        SectionHeading("13", if (tm) "Dil sazlamasy" else "Dil Ayarları")
         AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text(if (tm) "Programma dili" else "Uygulama dili", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -1178,7 +1201,7 @@ private fun FeaturesTab(
         }
 
         Spacer(Modifier.height(18.dp))
-        SectionHeading("05", if (tm) "Ses we titreşim" else "Ses ve Titreşim")
+        SectionHeading("14", if (tm) "Ses we titreşim" else "Ses ve Titreşim")
         AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 PreferenceSwitchRow(
@@ -1201,7 +1224,7 @@ private fun FeaturesTab(
 }
 
 @Composable
-private fun SectionHeading(number: String, title: String) {
+internal fun SectionHeading(number: String, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 9.dp)) {
         Text(number, color = PurpleLight, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
         Spacer(Modifier.width(9.dp))
@@ -1228,7 +1251,7 @@ private fun SoonFeatureCard(title: String, subtitle: String, icon: String, feedb
 }
 
 @Composable
-private fun PreferenceSwitchRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+internal fun PreferenceSwitchRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -1269,7 +1292,7 @@ private fun BrandHeader() {
 }
 
 @Composable
-private fun StatusPill(text: String, color: Color) {
+internal fun StatusPill(text: String, color: Color) {
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(CardBg.copy(alpha = 0.82f)).padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1281,7 +1304,7 @@ private fun StatusPill(text: String, color: Color) {
 }
 
 @Composable
-private fun InfoPill(modifier: Modifier = Modifier, title: String, subtitle: String) {
+internal fun InfoPill(modifier: Modifier = Modifier, title: String, subtitle: String) {
     Column(modifier.clip(RoundedCornerShape(15.dp)).background(CardBg2).padding(horizontal = 13.dp, vertical = 12.dp)) {
         Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
         Spacer(Modifier.height(3.dp))
@@ -1290,7 +1313,7 @@ private fun InfoPill(modifier: Modifier = Modifier, title: String, subtitle: Str
 }
 
 @Composable
-private fun NeonButton(
+internal fun NeonButton(
     text: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -1316,7 +1339,7 @@ private fun NeonButton(
 }
 
 @Composable
-private fun AnimatedSurface(
+internal fun AnimatedSurface(
     modifier: Modifier = Modifier,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
     color: Color = CardBg,
@@ -1704,7 +1727,7 @@ private fun GameBackupDialog(
 }
 
 @Composable
-private fun GameCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
     AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(16.dp), content = content)
     }
@@ -1718,6 +1741,18 @@ private fun GameToolsTab(
     allServers: List<Server>,
     scope: CoroutineScope,
     onUseServer: (Server) -> Unit,
+    input: String,
+    message: String,
+    soundEnabled: Boolean,
+    vibrationEnabled: Boolean,
+    onInput: (String) -> Unit,
+    onPaste: () -> Unit,
+    onAdd: () -> Unit,
+    onLang: (String) -> Unit,
+    onSound: (Boolean) -> Unit,
+    onVibration: (Boolean) -> Unit,
+    onClearMeasurements: () -> Unit,
+    prefs: android.content.SharedPreferences,
     feedback: (FeedbackType) -> Unit
 ) {
     val tm = lang == "tm"
@@ -1726,12 +1761,24 @@ private fun GameToolsTab(
     var win by remember { mutableStateOf(1) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
-        Text(if (tm) "Oýun gurallary" else "Oyun Araçları", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text(if (tm) "Ping, serwer we birikme gözegçiligi" else "Ping, sunucu ve bağlantı takibi", color = TextMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(18.dp))
+        Text(if (tm) "Oýun" else "Oyun", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text(if (tm) "Game Booster, oýun gurallary we sazlamalar" else "Game Booster, oyun araçları ve ayarlar", color = TextMuted, fontSize = 13.sp)
+        Spacer(Modifier.height(16.dp))
+
+        // ---------- GAME BOOSTER (en üstte) ----------
+        BoosterHeroCard(lang = lang, prefs = prefs, feedback = feedback)
+
+        // ---------- REDEEM CODE ----------
+        Spacer(Modifier.height(20.dp))
+        RedeemSection(lang = lang, prefs = prefs, feedback = feedback)
+
+        // ---------- Performans monitörü, canlı trafik, kararlılık, oturum ----------
+        Spacer(Modifier.height(20.dp))
+        PerformanceSection(lang = lang, feedback = feedback)
+        Spacer(Modifier.height(20.dp))
 
         // ---------- 15: Arka plan trafiği ----------
-        SectionHeading("15", if (tm) "Arka plan trafigi" else "Arka Plan Trafiği Kontrolü")
+        SectionHeading("03", if (tm) "Arka plan trafigi" else "Arka Plan Trafiği Kontrolü")
         GameCard {
             Text(
                 if (tm) "Mağaza programmalarynyň arka plan wagtyndaky maglumatyny sistema sazlamalaryndan çäkläp bilersiň:"
@@ -1767,7 +1814,7 @@ private fun GameToolsTab(
 
         // ---------- 16: Akıllı sunucu yedekleme ----------
         Spacer(Modifier.height(18.dp))
-        SectionHeading("16", if (tm) "Akylly serwer ätiýaçlygy" else "Akıllı Sunucu Yedekleme")
+        SectionHeading("04", if (tm) "Akylly serwer ätiýaçlygy" else "Akıllı Sunucu Yedekleme")
         AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                 PreferenceSwitchRow(
@@ -1788,7 +1835,7 @@ private fun GameToolsTab(
 
         // ---------- 17: Ping grafiği ----------
         Spacer(Modifier.height(18.dp))
-        SectionHeading("17", if (tm) "Oýun ping grafigi" else "Oyun Ping Grafiği")
+        SectionHeading("05", if (tm) "Oýun ping grafigi" else "Oyun Ping Grafiği")
         GameCard {
             Text(
                 current?.name ?: (if (tm) "Serwer saýlanmady" else "Sunucu seçilmedi"),
@@ -1837,7 +1884,7 @@ private fun GameToolsTab(
 
         // ---------- 18: Önce / Sonra testi ----------
         Spacer(Modifier.height(18.dp))
-        SectionHeading("18", if (tm) "Öň / Soň synagy" else "Önce / Sonra Testi")
+        SectionHeading("06", if (tm) "Öň / Soň synagy" else "Önce / Sonra Testi")
         GameCard {
             Text(
                 if (tm) "Şol bir maksady VPN öçük we (birikdiň bolsa) açyk ýoldan ölç."
@@ -1914,7 +1961,7 @@ private fun GameToolsTab(
 
         // ---------- 19: Oyun trafiğine öncelik ----------
         Spacer(Modifier.height(18.dp))
-        SectionHeading("19", if (tm) "Oýun trafigine ileri tutmak" else "Oyun Trafiğine Öncelik")
+        SectionHeading("07", if (tm) "Oýun trafigine ileri tutmak" else "Oyun Trafiğine Öncelik")
         SoonFeatureCard(
             title = if (tm) "Oýun paketlerini öňe geçir" else "Oyun paketlerini öne al",
             subtitle = if (tm) "Paket ileri tutmak VPN hyzmatynda amala aşyrylmaly; häzir işjeň däl." else "Paket önceliği VPN servisinde uygulanmalı; şu an etkin değil.",
@@ -1924,7 +1971,7 @@ private fun GameToolsTab(
 
         // ---------- 20: Akıllı oyun sunucusu önerisi ----------
         Spacer(Modifier.height(18.dp))
-        SectionHeading("20", if (tm) "Akylly oýun serweri" else "Akıllı Oyun Sunucusu Önerisi")
+        SectionHeading("08", if (tm) "Akylly oýun serweri" else "Akıllı Oyun Sunucusu Önerisi")
         GameCard {
             Text(
                 if (tm) "Ping, jitter, paket ýitgisi we (bar bolsa) ýygnaklyk maglumatlary birleşdirilýär."
@@ -1989,6 +2036,24 @@ private fun GameToolsTab(
                 color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
             )
         }
+
+        // ---------- Oyun geçmişi ----------
+        Spacer(Modifier.height(18.dp))
+        GameHistorySection(lang = lang, prefs = prefs, feedback = feedback)
+
+        // ---------- Eski "Özellikler" sekmesinden taşınan bölümler ----------
+        Spacer(Modifier.height(18.dp))
+        GameSettingsSections(
+            lang = lang, input = input, message = message,
+            soundEnabled = soundEnabled, vibrationEnabled = vibrationEnabled,
+            onInput = onInput, onPaste = onPaste, onAdd = onAdd, onLang = onLang,
+            onSound = onSound, onVibration = onVibration,
+            onClearMeasurements = onClearMeasurements, prefs = prefs, feedback = feedback
+        )
+
+        // ---------- Hata ayıklama günlüğü ----------
+        Spacer(Modifier.height(18.dp))
+        DebugSection(lang = lang, feedback = feedback)
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -1998,8 +2063,6 @@ private fun GameToolsTab(
 // =====================================================================
 
 private data class AppEntry(val label: String, val pkg: String)
-
-private val PUBG_PACKAGES = listOf("com.tencent.ig", "com.pubg.imobile", "com.pubg.krmobile", "com.vng.pubgmobile", "com.rekoo.pubgm")
 
 private fun readSelectedApps(prefs: android.content.SharedPreferences): Set<String> =
     (prefs.getString("vpn_apps", "") ?: "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
