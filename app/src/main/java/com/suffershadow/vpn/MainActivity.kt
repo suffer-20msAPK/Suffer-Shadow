@@ -96,8 +96,8 @@ internal val TextMuted = Color(0xFFA7AEC8)
 internal val BorderPurple = Color(0xFF50308C)
 
 // UZAKTAN SUNUCU LİNKLERİ (BURAYA KENDİ LİNKLERİNİZİ YAPIŞTIRIN)
-private const val SOCIAL_MEDIA_URL = "https://example.com/social.txt" // Sosyal Medya sunucuları için link
-private const val PUBG_URL = "https://example.com/pubg.txt" // PUBG sunucuları için link
+private const val SOCIAL_MEDIA_URL = "https://raw.githubusercontent.com/suffer-20msAPK/Suffer-Shadow/main/servers/social.txt"
+private const val PUBG_URL = "https://raw.githubusercontent.com/suffer-20msAPK/Suffer-Shadow/main/servers/pubg.txt"
 
 internal enum class FeedbackType { TAP, CONNECT, DISCONNECT, ERROR }
 
