@@ -113,7 +113,7 @@ fun VipScreen(
         
         OutlinedTextField(
             value = code,
-            onValueChange = { code = it.uppercase().filter { c -> c.isLetterOrDigit() || c == '-' } },
+            onValueChange = { code = it.uppercase(java.util.Locale.US).filter { c -> c.isLetterOrDigit() || c == '-' } },
             label = { Text("VIP Kodu") },
             placeholder = { Text("SHADOW-XXXX-XXXX") },
             singleLine = true,
