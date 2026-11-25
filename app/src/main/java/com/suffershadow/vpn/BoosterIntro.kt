@@ -501,7 +501,7 @@ private fun BoosterIntro(
 // =====================================================================
 
 @Composable
-fun GameBoosterScreen(
+internal fun GameBoosterScreen(
     lang: String,
     prefs: SharedPreferences,
     feedback: (FeedbackType) -> Unit,
