@@ -296,21 +296,35 @@ fun AppRoot() {
     var input by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
 
-    // VPN Geri Sayım (2 Saat = 7200 saniye)
+    // VPN oturum sayacı (2 saat). Bitiş zamanı kalıcıdır; uygulama kapanıp açılsa da kalan süre doğru hesaplanır.
+    val sessionMs = 2 * 60 * 60 * 1000L
     var vpnTimeLeft by remember { mutableStateOf(7200) }
-    
+    var sessionWasConnected by remember { mutableStateOf(false) }
+    var sessionExpired by remember { mutableStateOf(false) }
+
     LaunchedEffect(VpnState.status) {
         if (VpnState.status == VpnState.CONNECTED) {
-            vpnTimeLeft = 7200 // Bağlanınca sıfırla
-            while (vpnTimeLeft > 0 && VpnState.status == VpnState.CONNECTED) {
-                delay(1000L)
-                vpnTimeLeft--
+            sessionWasConnected = true
+            var end = prefs.getLong("session_end", 0L)
+            if (end <= System.currentTimeMillis()) {
+                end = System.currentTimeMillis() + sessionMs
+                prefs.edit().putLong("session_end", end).apply()
             }
-            if (vpnTimeLeft <= 0) {
-                stopVpnService(context) // Süre bitince kapat
+            while (VpnState.status == VpnState.CONNECTED) {
+                val left = ((end - System.currentTimeMillis()) / 1000L).toInt()
+                vpnTimeLeft = left.coerceAtLeast(0)
+                if (left <= 0) {
+                    prefs.edit().remove("session_end").apply()
+                    stopVpnService(context)
+                    sessionExpired = true
+                    break
+                }
+                delay(500L)
             }
-        } else {
-            vpnTimeLeft = 7200 // Bağlantı kesilirse sıfırla
+        } else if (VpnState.status != VpnState.CONNECTING) {
+            // Bağlantı kesildi: sayaç durur, yeniden bağlanınca yeni oturum başlar.
+            prefs.edit().remove("session_end").apply()
+            vpnTimeLeft = 7200
         }
     }
 
@@ -435,6 +449,16 @@ fun AppRoot() {
         if (idx >= 0) {
             if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
                 onSelect(idx)
+                gameScope.launch {
+                    delay(15000L)
+                    if (VpnState.status != VpnState.CONNECTED) {
+                        android.widget.Toast.makeText(
+                            context,
+                            if (lang == "tm") "Ätiýaçlyk serwere geçip bolmady. Gaýtadan birikmegi synanyşyň." else "Yedek sunucuya geçilemedi. Tekrar bağlanmayı dene.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
             } else {
                 selected = idx
                 save()
@@ -450,6 +474,18 @@ fun AppRoot() {
             auto = gameState.autoFailover,
             onSwitch = { gameState.backup = null; switchToServer(b.server) },
             onDismiss = { gameState.backupDismissedFor = current?.link; gameState.backup = null }
+        )
+    }
+
+    if (sessionExpired) {
+        AlertDialog(
+            onDismissRequest = { sessionExpired = false },
+            containerColor = CardBg,
+            titleContentColor = Color.White,
+            textContentColor = TextMuted,
+            title = { Text(if (lang == "tm") "Wagt gutardy" else "Süre doldu", fontWeight = FontWeight.Bold) },
+            text = { Text(if (lang == "tm") "2 sagatlyk sessiýa gutardy we VPN ýapyldy. Gaýtadan birikseňiz täze sessiýa başlanar." else "2 saatlik oturum doldu ve VPN kapatıldı. Yeniden bağlanırsan yeni oturum başlar.") },
+            confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
         )
     }
 
@@ -512,6 +548,7 @@ fun AppRoot() {
                     current = current,
                     ping = current?.let { pings[it.link] },
                     timeLeft = vpnTimeLeft,
+                    everConnected = sessionWasConnected,
                     onToggle = {
                         if (VpnState.stage == VpnState.ST_FAILED) {
                             feedback(FeedbackType.CONNECT)
@@ -552,6 +589,14 @@ fun AppRoot() {
                     onLang = { newLang -> feedback(FeedbackType.TAP); lang = newLang; prefs.edit().putString("lang", newLang).apply() },
                     onSound = { enabled -> feedback(FeedbackType.TAP); soundEnabled = enabled; prefs.edit().putBoolean("sound_enabled", enabled).apply() },
                     onVibration = { enabled -> feedback(FeedbackType.TAP); vibrationEnabled = enabled; prefs.edit().putBoolean("vibration_enabled", enabled).apply() },
+                    onClearMeasurements = {
+                        gameState.history.clear()
+                        gameState.abBefore = null
+                        gameState.abAfter = null
+                        gameState.ranking = emptyList()
+                        gameState.backup = null
+                        android.widget.Toast.makeText(context, if (lang == "tm") "Ölçeg taryhy arassalandy" else "Ölçüm geçmişi temizlendi", android.widget.Toast.LENGTH_SHORT).show()
+                    },
                     feedback = feedback
                 )
                 tab == 2 -> GameToolsTab(
@@ -574,6 +619,7 @@ private fun HomeTab(
     current: Server?,
     ping: Int?,
     timeLeft: Int,
+    everConnected: Boolean,
     onToggle: () -> Unit,
     onOpenServers: () -> Unit
 ) {
@@ -595,6 +641,13 @@ private fun HomeTab(
     val minutes = (timeLeft % 3600) / 60
     val seconds = timeLeft % 60
     val timeString = String.format("%02d:%02d:%02d", hours, minutes, seconds)
+    val statusText = when {
+        connected -> "$timeString • " + (if (tm) "BIRIKDI" else "BAĞLANILDI")
+        busy -> if (tm) "BIRIGÝÄR" else "BAĞLANILIYOR"
+        failed -> if (tm) "Birikdirip bolmady" else "Bağlanılamadı"
+        everConnected -> if (tm) "BIRIKME KESILDI" else "BAĞLANTI KESİLDİ"
+        else -> if (tm) "Birikdirilmedi" else "Bağlı değil"
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 18.dp),
@@ -603,7 +656,7 @@ private fun HomeTab(
         BrandHeader()
         Spacer(Modifier.height(14.dp))
         StatusPill(
-            text = if (connected) "$timeString • ${if(tm) "Birikdi" else "Bağlandı"}" else vpnStatusText(lang),
+            text = statusText,
             color = when {
                 VpnState.status == VpnState.ERROR || VpnState.stage == VpnState.ST_FAILED -> RedSoft
                 connected && VpnState.delayMs >= 0 -> AccentGreen
@@ -644,8 +697,8 @@ private fun HomeTab(
                         Text(
                             text = when {
                                 connected -> if (tm) "ÖÇÜR" else "KAPAT"
-                                failed -> if (tm) "GAÝTADAN SYNANYŞ" else "TEKRAR DENE"
-                                busy -> if (tm) "BIRIGÝÄR" else "BAĞLANIYOR"
+                                failed -> if (tm) "GOŞUL" else "BAĞLAN"
+                                busy -> if (tm) "BIRIGÝÄR" else "BAĞLANILIYOR"
                                 else -> if (tm) "GOŞUL" else "BAĞLAN"
                             },
                             color = Color.White,
@@ -1014,9 +1067,11 @@ private fun FeaturesTab(
     onLang: (String) -> Unit,
     onSound: (Boolean) -> Unit,
     onVibration: (Boolean) -> Unit,
+    onClearMeasurements: () -> Unit,
     feedback: (FeedbackType) -> Unit
 ) {
     val tm = lang == "tm"
+    val context = LocalContext.current
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
         Text(if (tm) "Aýratynlyklar" else "Özellikler", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Text(if (tm) "Suffer Shadow sazlamalary" else "Suffer Shadow ayarları", color = TextMuted, fontSize = 13.sp)
@@ -1069,12 +1124,32 @@ private fun FeaturesTab(
         )
         Spacer(Modifier.height(12.dp))
         SectionHeading("03", if (tm) "Tor arassala" else "Ağ Temizle")
-        SoonFeatureCard(
-            title = if (tm) "Howpsuz ulgam hyzmaty" else "Güvenli sistem bakımı",
-            subtitle = if (tm) "Android rugsat berýän çäkde işleýär." else "Android'in izin verdiği güvenli işlemlerle uygulanacak.",
-            icon = "✧",
-            feedback = feedback
-        )
+        GameCard {
+            Text(
+                if (tm) "Android başga programmalaryň tor maglumatyny pozmaga rugsat bermeýär. Bu ýerde diňe şu programmanyň ölçeg taryhyny arassalap we sistemanyň tor sazlamalaryny açyp bilersiň."
+                else "Android, diğer uygulamaların ağ verisini silmeye izin vermez. Burada yalnızca bu uygulamanın ölçüm geçmişini temizleyebilir ve sistemin ağ ayarlarını açabilirsin.",
+                color = TextMuted, fontSize = 12.sp, lineHeight = 16.sp
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                NeonButton(
+                    text = if (tm) "Ölçegleri arassala" else "Ölçümleri temizle",
+                    modifier = Modifier.weight(1f),
+                    secondary = true,
+                    onClick = { feedback(FeedbackType.TAP); onClearMeasurements() }
+                )
+                NeonButton(
+                    text = if (tm) "Tor sazlamalary" else "Ağ ayarları",
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        feedback(FeedbackType.TAP)
+                        runCatching {
+                            context.startActivity(Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    }
+                )
+            }
+        }
 
         Spacer(Modifier.height(18.dp))
         SectionHeading("04", if (tm) "Dil sazlamasy" else "Dil Ayarları")
@@ -1414,8 +1489,13 @@ private class GameToolsState(private val prefs: android.content.SharedPreference
         prefs.edit().putString(GamePrefs.AB_TARGET, value).apply()
     }
 
-    fun runAb(scope: CoroutineScope, vpnOn: Boolean, invalidMsg: String) {
+    fun runAb(scope: CoroutineScope, vpnOn: Boolean, invalidMsg: String, linkMsg: String) {
         if (abRunning) return
+        val low = abTarget.trim().lowercase()
+        if (listOf("ss://", "vless://", "vmess://", "trojan://", "hysteria2://", "hy2://").any { low.startsWith(it) }) {
+            abError = linkMsg
+            return
+        }
         val t = parseGameTarget(abTarget)
         if (t == null) {
             abError = invalidMsg
@@ -1454,6 +1534,7 @@ private fun parseGameTarget(raw: String): Pair<String, Int>? {
     val host = if (t.contains(":")) t.substringBeforeLast(":") else t
     val port = if (t.contains(":")) t.substringAfterLast(":").toIntOrNull() else 443
     if (host.isBlank() || port == null || port !in 1..65535) return null
+    if (!Regex("^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$").matches(host)) return null
     return host to port
 }
 
@@ -1477,6 +1558,8 @@ private fun serverLoad(s: Server): Int? =
         .find(s.name)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
 
 /** Düşük puan = daha iyi. Ping, jitter, kayıp ve (varsa) yoğunluk birleştirilir. */
+private fun isStableServer(r: GameProbe): Boolean = r.avg in 0..300 && r.jitter <= 100 && r.lossPct <= 20
+
 private fun gameScore(r: GameProbe, load: Int?): Double {
     if (r.avg < 0) return 1_000_000.0
     return r.avg + r.jitter * 2.0 + r.lossPct * 6.0 + (load ?: 0) * 1.5
@@ -1609,13 +1692,6 @@ private fun GameToolsTab(
         // ---------- 15: Arka plan trafiği ----------
         SectionHeading("15", if (tm) "Arka plan trafigi" else "Arka Plan Trafiği Kontrolü")
         GameCard {
-            PreferenceSwitchRow(
-                title = if (tm) "Oýun wagtynda arka plany çäkle" else "Oyun sırasında arka planı kısıtla",
-                subtitle = if (tm) "Gereksiz ýüklemeler we täzelenmeler birikmäni bulaşdyrmasyn" else "Gereksiz indirme ve güncellemeler bağlantıyı meşgul etmesin",
-                checked = state.blockBackground,
-                onCheckedChange = { feedback(FeedbackType.TAP); state.setFlag(GamePrefs.BLOCK_BACKGROUND, it) }
-            )
-            Spacer(Modifier.height(4.dp))
             Text(
                 if (tm) "Mağaza programmalarynyň arka plan wagtyndaky maglumatyny sistema sazlamalaryndan çäkläp bilersiň:"
                 else "Mağaza uygulamalarının arka plan verisini sistem ayarlarından kısıtlayabilirsin:",
@@ -1642,8 +1718,8 @@ private fun GameToolsTab(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                if (tm) "Sazlama düwmeleri derrew işleýär. Üstdäki açar VPN hyzmatynyň goldawyna bagly."
-                else "Ayar düğmeleri hemen etki eder. Üstteki anahtar VPN servisinin desteğine bağlıdır.",
+                if (tm) "Awtomatik päsgelçilik heniz ýok; bu düwmeler diňe sistema sazlamalaryny açýar."
+                else "Otomatik engelleme henüz yok; bu düğmeler yalnızca sistem ayarlarını açar.",
                 color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
             )
         }
@@ -1735,6 +1811,12 @@ private fun GameToolsTab(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (tm) "Mysal: 203.0.113.5:443 ýa-da oyun.example.com:443. ss:// we vless:// linkleri kabul edilmeýär."
+                else "Örnek: 203.0.113.5:443 veya oyun.example.com:443. ss:// ve vless:// bağlantıları kabul edilmez.",
+                color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
+            )
             Spacer(Modifier.height(10.dp))
             NeonButton(
                 text = if (state.abRunning) (if (tm) "Ölçülýär..." else "Ölçülüyor...")
@@ -1743,7 +1825,11 @@ private fun GameToolsTab(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     feedback(FeedbackType.TAP)
-                    state.runAb(scope, vpnOn, if (tm) "Dogry ip:port ýa-da host giriz." else "Geçerli bir ip:port veya alan adı gir.")
+                    state.runAb(
+                        scope, vpnOn,
+                        if (tm) "Oýun serweriniň adresini giriziň: IP:PORT ýa-da domen:PORT." else "Oyun sunucusunun adresini gir: IP:PORT veya alan adı:PORT.",
+                        if (tm) "Bu VPN linki. Bu ýere oýun serweriniň IP:PORT ýa-da domen:PORT adresini ýazyň (VPN linki däl)." else "Bu bir VPN bağlantı linki. Buraya oyun sunucusunun IP:PORT veya alan adı:PORT adresini yaz (VPN linki değil)."
+                    )
                 }
             )
             if (state.abError.isNotEmpty()) {
@@ -1779,8 +1865,8 @@ private fun GameToolsTab(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                if (tm) "TCP birikme wagty ölçelýär; oýunlar UDP ulanyp biler. Programma VPN-den çykarylan bolsa «açyk» ölçeg tunelden geçmezligi mümkin."
-                else "TCP bağlantı süresi ölçülür; oyunlar UDP kullanabilir. Uygulama VPN dışında tutuluyorsa «açık» ölçüm tünelden geçmeyebilir.",
+                if (tm) "Ünsi beriň: TCP ölçegi UDP oýun pingini görkezmeýär, diňe ugry we deňeşdirmäni görkezýär. Programma VPN-den çykarylan bolsa «açyk» ölçeg tunelden geçmezligi mümkin."
+                else "Önemli: TCP ölçümü UDP oyun pingini temsil etmez; yalnızca yön ve karşılaştırma verir. Uygulama VPN dışında tutuluyorsa «açık» ölçüm tünelden geçmeyebilir.",
                 color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
             )
         }
@@ -1788,16 +1874,12 @@ private fun GameToolsTab(
         // ---------- 19: Oyun trafiğine öncelik ----------
         Spacer(Modifier.height(18.dp))
         SectionHeading("19", if (tm) "Oýun trafigine ileri tutmak" else "Oyun Trafiğine Öncelik")
-        AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                PreferenceSwitchRow(
-                    title = if (tm) "Oýun paketlerini öňe geçir" else "Oyun paketlerini öne al",
-                    subtitle = if (tm) "Uly ýüklemelerden öň geçsin. Täsiri ulga we serwere bagly" else "Büyük indirmelerin önüne geçsin. Etkisi ağa ve sunucuya bağlıdır",
-                    checked = state.prioritizeGame,
-                    onCheckedChange = { feedback(FeedbackType.TAP); state.setFlag(GamePrefs.PRIORITIZE_GAME, it) }
-                )
-            }
-        }
+        SoonFeatureCard(
+            title = if (tm) "Oýun paketlerini öňe geçir" else "Oyun paketlerini öne al",
+            subtitle = if (tm) "Paket ileri tutmak VPN hyzmatynda amala aşyrylmaly; häzir işjeň däl." else "Paket önceliği VPN servisinde uygulanmalı; şu an etkin değil.",
+            icon = "⚡",
+            feedback = feedback
+        )
 
         // ---------- 20: Akıllı oyun sunucusu önerisi ----------
         Spacer(Modifier.height(18.dp))
@@ -1819,6 +1901,7 @@ private fun GameToolsTab(
                 Text(if (tm) "Heniz serwer ýok." else "Henüz sunucu yok.", color = TextMuted, fontSize = 12.sp)
             }
             val ranked = state.ranking
+            val best = ranked.firstOrNull { isStableServer(it.result) }
             ranked.take(5).forEachIndexed { i, r ->
                 Spacer(Modifier.height(8.dp))
                 Row(
@@ -1836,13 +1919,20 @@ private fun GameToolsTab(
                         }
                         Text(detail, color = TextMuted, fontSize = 11.sp)
                     }
-                    if (i == 0 && r.result.avg >= 0) {
+                    if (best != null && r.server.link == best.server.link) {
                         Text(if (tm) "Maslahat" else "Önerilen", color = AccentGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
-            val best = ranked.firstOrNull()
-            if (best != null && best.result.avg >= 0) {
+            if (ranked.isNotEmpty() && best == null) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    if (tm) "Ýeterlik durnukly serwer tapylmady (ping ≤ 300 ms, jitter ≤ 100 ms, ýitgi ≤ %20)."
+                    else "Yeterince kararlı sunucu bulunamadı (ping ≤ 300 ms, jitter ≤ 100 ms, kayıp ≤ %20).",
+                    color = Color(0xFFFFD166), fontSize = 12.sp
+                )
+            }
+            if (best != null) {
                 Spacer(Modifier.height(10.dp))
                 NeonButton(
                     text = if (tm) "Şu serwere geç" else "Bu sunucuya geç",
