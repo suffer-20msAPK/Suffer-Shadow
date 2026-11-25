@@ -35,6 +35,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -263,6 +264,16 @@ fun AppRoot() {
     var vibrationEnabled by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", true)) }
     val feedback = rememberUiFeedback(soundEnabled, vibrationEnabled)
 
+    // Android 13+: bildirim panelinde VPN durumu/hızı görünsün diye izin iste
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(context, "android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notifLauncher.launch("android.permission.POST_NOTIFICATIONS")
+        }
+    }
+
     val servers = remember {
         val list = mutableStateListOf<Server>()
         var saved = prefs.getString("links", "") ?: ""
@@ -303,6 +314,11 @@ fun AppRoot() {
     var sessionExpired by remember { mutableStateOf(false) }
 
     LaunchedEffect(VpnState.status) {
+        // Süre uygulama kapalıyken servis tarafında dolmuş olabilir
+        if (prefs.getBoolean("session_expired", false)) {
+            prefs.edit().putBoolean("session_expired", false).apply()
+            sessionExpired = true
+        }
         if (VpnState.status == VpnState.CONNECTED) {
             sessionWasConnected = true
             var end = prefs.getLong("session_end", 0L)
@@ -597,6 +613,7 @@ fun AppRoot() {
                         gameState.backup = null
                         android.widget.Toast.makeText(context, if (lang == "tm") "Ölçeg taryhy arassalandy" else "Ölçüm geçmişi temizlendi", android.widget.Toast.LENGTH_SHORT).show()
                     },
+                    prefs = prefs,
                     feedback = feedback
                 )
                 tab == 2 -> GameToolsTab(
@@ -1068,6 +1085,7 @@ private fun FeaturesTab(
     onSound: (Boolean) -> Unit,
     onVibration: (Boolean) -> Unit,
     onClearMeasurements: () -> Unit,
+    prefs: android.content.SharedPreferences,
     feedback: (FeedbackType) -> Unit
 ) {
     val tm = lang == "tm"
@@ -1116,12 +1134,7 @@ private fun FeaturesTab(
 
         Spacer(Modifier.height(17.dp))
         SectionHeading("02", if (tm) "Programma bloklaýjy" else "Uygulama Engelleyici")
-        SoonFeatureCard(
-            title = if (tm) "Diňe saýlanan programmalar VPN ulansyn" else "Yalnızca seçilen uygulamalar VPN kullansın",
-            subtitle = if (tm) "Programmanyň içindäki saýlama we VPN ugrukdyrmasy indiki tapgyrda." else "Uygulama seçimi ve Android VPN yönlendirmesi sonraki geliştirme aşamasında.",
-            icon = "▦",
-            feedback = feedback
-        )
+        AppFilterCard(lang = lang, prefs = prefs, feedback = feedback)
         Spacer(Modifier.height(12.dp))
         SectionHeading("03", if (tm) "Tor arassala" else "Ağ Temizle")
         GameCard {
@@ -1505,10 +1518,12 @@ private class GameToolsState(private val prefs: android.content.SharedPreference
         abRunning = true
         scope.launch {
             try {
-                val r = withContext(Dispatchers.IO) {
-                    probeServer(Server("", t.first, t.first, t.second), 8)
+                // Bu uygulama VPN dışında tutulduğu için bu ölçüm doğrudan ağdan geçer ("VPN kapalı" yolu).
+                abBefore = withContext(Dispatchers.IO) { probeSamples(6) { httpFirstByteMs(t.first, t.second, false) } }
+                // VPN bağlıysa aynı hedef Xray SOCKS girişi üzerinden, yani tünelden ölçülür ("VPN açık" yolu).
+                if (vpnOn) {
+                    abAfter = withContext(Dispatchers.IO) { probeSamples(6) { httpFirstByteMs(t.first, t.second, true) } }
                 }
-                if (vpnOn) abAfter = r else abBefore = r
             } finally {
                 abRunning = false
             }
@@ -1539,10 +1554,12 @@ private fun parseGameTarget(raw: String): Pair<String, Int>? {
 }
 
 /** Aynı sunucuya art arda TCP bağlantı süresi ölçer: ortalama, en düşük, jitter ve kayıp. */
-private fun probeServer(s: Server, count: Int = 5): GameProbe {
+private fun probeServer(s: Server, count: Int = 5): GameProbe = probeSamples(count) { pingServer(s) }
+
+private fun probeSamples(count: Int, sample: () -> Int): GameProbe {
     val ok = ArrayList<Int>()
     repeat(count) {
-        val p = pingServer(s)
+        val p = sample()
         if (p >= 0) ok.add(p)
         Thread.sleep(120)
     }
@@ -1558,6 +1575,30 @@ private fun serverLoad(s: Server): Int? =
         .find(s.name)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
 
 /** Düşük puan = daha iyi. Ping, jitter, kayıp ve (varsa) yoğunluk birleştirilir. */
+/**
+ * Hedefe HTTP HEAD isteği gönderip ilk yanıt baytına kadar geçen süreyi ölçer (bağlantı kurma dahil).
+ * viaTunnel=true ise istek Xray'in yerel SOCKS girişinden (127.0.0.1:10808) yani VPN tünelinden geçer.
+ * Hedef HTTP yanıtı vermezse -1 döner.
+ */
+private fun httpFirstByteMs(host: String, port: Int, viaTunnel: Boolean): Int {
+    return try {
+        val sock = if (viaTunnel) Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))) else Socket()
+        sock.use { s ->
+            s.soTimeout = 3000
+            val start = System.nanoTime()
+            if (viaTunnel) s.connect(InetSocketAddress.createUnresolved(host, port), 4000)
+            else s.connect(InetSocketAddress(host, port), 3000)
+            val out = s.getOutputStream()
+            out.write("HEAD / HTTP/1.0\r\nHost: $host\r\nConnection: close\r\n\r\n".toByteArray())
+            out.flush()
+            val b = s.getInputStream().read()
+            if (b >= 0) ((System.nanoTime() - start) / 1_000_000).toInt() else -1
+        }
+    } catch (_: Exception) {
+        -1
+    }
+}
+
 private fun isStableServer(r: GameProbe): Boolean = r.avg in 0..300 && r.jitter <= 100 && r.lossPct <= 20
 
 private fun gameScore(r: GameProbe, load: Int?): Double {
@@ -1799,8 +1840,8 @@ private fun GameToolsTab(
         SectionHeading("18", if (tm) "Öň / Soň synagy" else "Önce / Sonra Testi")
         GameCard {
             Text(
-                if (tm) "Şol bir oýun serwerine VPN öçükkä we açykka ölçeg al."
-                else "Aynı oyun sunucusuna VPN kapalıyken ve açıkken ölçüm yap.",
+                if (tm) "Şol bir maksady VPN öçük we (birikdiň bolsa) açyk ýoldan ölç."
+                else "Aynı hedefi VPN kapalı ve (bağlıysan) açık yoldan ölç.",
                 color = TextMuted, fontSize = 12.sp
             )
             Spacer(Modifier.height(10.dp))
@@ -1820,7 +1861,7 @@ private fun GameToolsTab(
             Spacer(Modifier.height(10.dp))
             NeonButton(
                 text = if (state.abRunning) (if (tm) "Ölçülýär..." else "Ölçülüyor...")
-                else if (vpnOn) (if (tm) "Ölç (VPN açyk)" else "Ölç (VPN açık)")
+                else if (vpnOn) (if (tm) "Deňeşdir (VPN öçük + açyk)" else "Karşılaştır (VPN kapalı + açık)")
                 else (if (tm) "Ölç (VPN öçük)" else "Ölç (VPN kapalı)"),
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
@@ -1865,8 +1906,8 @@ private fun GameToolsTab(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                if (tm) "Ünsi beriň: TCP ölçegi UDP oýun pingini görkezmeýär, diňe ugry we deňeşdirmäni görkezýär. Programma VPN-den çykarylan bolsa «açyk» ölçeg tunelden geçmezligi mümkin."
-                else "Önemli: TCP ölçümü UDP oyun pingini temsil etmez; yalnızca yön ve karşılaştırma verir. Uygulama VPN dışında tutuluyorsa «açık» ölçüm tünelden geçmeyebilir.",
+                if (tm) "Ünsi beriň: maksada HTTP haýyşy iberilip, ilkinji jogap wagty ölçelýär (TCP). UDP oýun pingini görkezmeýär; maksat HTTP jogap bermese ölçeg alynmaýar. «Öçük» ölçeg göni tordan, «açyk» ölçeg tunelden geçýär."
+                else "Önemli: Hedefe HTTP isteği gönderilip ilk yanıt süresi ölçülür (TCP). UDP oyun pingini temsil etmez; hedef HTTP yanıtı vermiyorsa ölçüm alınamaz. «Kapalı» ölçüm doğrudan ağdan, «açık» ölçüm tünelden yapılır.",
                 color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
             )
         }
@@ -1949,5 +1990,141 @@ private fun GameToolsTab(
             )
         }
         Spacer(Modifier.height(20.dp))
+    }
+}
+
+// =====================================================================
+// UYGULAMA SEÇİCİ: yalnızca seçili uygulamalar VPN kullanır (VpnService.Builder.addAllowedApplication)
+// =====================================================================
+
+private data class AppEntry(val label: String, val pkg: String)
+
+private val PUBG_PACKAGES = listOf("com.tencent.ig", "com.pubg.imobile", "com.pubg.krmobile", "com.vng.pubgmobile", "com.rekoo.pubgm")
+
+private fun readSelectedApps(prefs: android.content.SharedPreferences): Set<String> =
+    (prefs.getString("vpn_apps", "") ?: "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
+private fun loadLaunchableApps(context: Context): List<AppEntry> {
+    val pm = context.packageManager
+    val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+    return pm.queryIntentActivities(intent, 0)
+        .mapNotNull { ri ->
+            val pkg = ri.activityInfo.packageName
+            if (pkg == context.packageName) null else AppEntry(ri.loadLabel(pm).toString(), pkg)
+        }
+        .distinctBy { it.pkg }
+        .sortedBy { it.label.lowercase() }
+}
+
+@Composable
+private fun AppFilterCard(lang: String, prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
+    val tm = lang == "tm"
+    val context = LocalContext.current
+    var selected by remember { mutableStateOf(readSelectedApps(prefs)) }
+    var showPicker by remember { mutableStateOf(false) }
+    var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    val vpnRunning = VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING
+
+    val save: (Set<String>) -> Unit = { set ->
+        selected = set
+        prefs.edit().putString("vpn_apps", set.joinToString(",")).apply()
+    }
+
+    LaunchedEffect(showPicker) {
+        if (showPicker && apps.isEmpty()) {
+            loading = true
+            apps = withContext(Dispatchers.IO) { loadLaunchableApps(context) }
+            loading = false
+        }
+    }
+
+    GameCard {
+        Text(
+            if (tm) "Diňe saýlanan programmalar VPN ulansyn" else "Yalnızca seçilen uygulamalar VPN kullansın",
+            color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (selected.isEmpty()) (if (tm) "Häzir ähli programmalar VPN ulanýar." else "Şu an tüm uygulamalar VPN kullanıyor.")
+            else (if (tm) "${selected.size} programma saýlandy: diňe olar VPN ulanýar." else "${selected.size} uygulama seçili: yalnızca bunlar VPN kullanır."),
+            color = if (selected.isEmpty()) TextMuted else AccentGreen, fontSize = 12.sp
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            NeonButton(
+                text = if (tm) "Programma saýla" else "Uygulama seç",
+                modifier = Modifier.weight(1f),
+                onClick = { feedback(FeedbackType.TAP); showPicker = true }
+            )
+            NeonButton(
+                text = if (tm) "PUBG saýla" else "PUBG'yi seç",
+                modifier = Modifier.weight(1f),
+                secondary = true,
+                onClick = {
+                    feedback(FeedbackType.TAP)
+                    val found = PUBG_PACKAGES.filter { context.packageManager.getLaunchIntentForPackage(it) != null }
+                    if (found.isEmpty()) {
+                        android.widget.Toast.makeText(context, if (tm) "PUBG tapylmady" else "PUBG bulunamadı", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        save(selected + found)
+                    }
+                }
+            )
+        }
+        if (selected.isNotEmpty()) {
+            Spacer(Modifier.height(9.dp))
+            NeonButton(
+                text = if (tm) "Saýlawy arassala" else "Seçimi temizle",
+                modifier = Modifier.fillMaxWidth(),
+                secondary = true,
+                onClick = { feedback(FeedbackType.TAP); save(emptySet()) }
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            if (vpnRunning) (if (tm) "Üýtgeşme indiki birikmäňizde işleýär; täzeden birikiň." else "Değişiklik bir sonraki bağlanışta geçerli olur; VPN'e yeniden bağlan.")
+            else (if (tm) "Üýtgeşme indiki birikmäňizde işleýär." else "Değişiklik bir sonraki bağlanışta geçerli olur."),
+            color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
+        )
+    }
+
+    if (showPicker) {
+        AlertDialog(
+            onDismissRequest = { showPicker = false },
+            containerColor = CardBg,
+            titleContentColor = Color.White,
+            textContentColor = TextMuted,
+            title = { Text(if (tm) "VPN ulanjak programmalar" else "VPN kullanacak uygulamalar", fontWeight = FontWeight.Bold) },
+            text = {
+                if (loading) {
+                    Text(if (tm) "Ýüklenýär..." else "Yükleniyor...")
+                } else {
+                    LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                        items(apps, key = { it.pkg }) { app ->
+                            val checked = app.pkg in selected
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clickable { save(if (checked) selected - app.pkg else selected + app.pkg) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = { save(if (checked) selected - app.pkg else selected + app.pkg) },
+                                    colors = CheckboxDefaults.colors(checkedColor = PurpleMain)
+                                )
+                                Text(app.label, color = Color.White, fontSize = 14.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPicker = false }) {
+                    Text(if (tm) "Taýyn" else "Tamam", color = PurpleLight, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
