@@ -4,8 +4,10 @@ import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -28,6 +30,7 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.URL
 import java.net.URLDecoder
+import java.util.Locale
 import kotlin.concurrent.thread
 
 object VpnState {
@@ -48,6 +51,13 @@ object VpnState {
     var error by mutableStateOf("")
     var failCode by mutableStateOf(0)
     var logLines by mutableStateOf("")
+
+    // Gerçek trafik: bu uygulamanın fiziksel ağ üzerinden VPN sunucusuyla yaptığı veri (bayt/sn ve oturum toplamı)
+    var rxBps by mutableStateOf(0L)
+    var txBps by mutableStateOf(0L)
+    var rxTotal by mutableStateOf(0L)
+    var txTotal by mutableStateOf(0L)
+    var speedSupported by mutableStateOf(true)
 }
 
 object XrayConfig {
@@ -218,6 +228,10 @@ class SufferVpnService : VpnService() {
     private var pfd: ParcelFileDescriptor? = null
     private var controller: CoreController? = null
 
+    private val notifLock = Any()
+    @Volatile private var tickerRunning = false
+    @Volatile private var probing = false
+
     private val handler = object : CoreCallbackHandler {
         override fun startup(): Long = 0
         override fun shutdown(): Long = 0
@@ -242,6 +256,11 @@ class SufferVpnService : VpnService() {
         VpnState.logLines = ""
         VpnState.stage = VpnState.ST_START
         VpnState.status = VpnState.CONNECTING
+        VpnState.rxBps = 0L
+        VpnState.txBps = 0L
+        VpnState.rxTotal = 0L
+        VpnState.txTotal = 0L
+        startTicker()
         thread { startVpn(link) }
         return START_NOT_STICKY
     }
@@ -262,9 +281,23 @@ class SufferVpnService : VpnService() {
             b.addRoute("0.0.0.0", 0)
             b.addDnsServer("1.1.1.1")
             b.addDnsServer("8.8.8.8")
-            try {
-                b.addDisallowedApplication(packageName)
-            } catch (e: Exception) {
+            // Uygulama seçimi: seçili uygulama varsa yalnızca onlar VPN kullanır.
+            // Seçim yoksa (veya hiçbiri eklenemezse) tüm uygulamalar VPN kullanır, bu uygulama hariç.
+            val selected = (getSharedPreferences("suffer", Context.MODE_PRIVATE).getString("vpn_apps", "") ?: "")
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() && it != packageName }
+            var allowedCount = 0
+            for (pkg in selected) {
+                try {
+                    b.addAllowedApplication(pkg)
+                    allowedCount++
+                } catch (e: Exception) {
+                }
+            }
+            if (allowedCount == 0) {
+                try {
+                    b.addDisallowedApplication(packageName)
+                } catch (e: Exception) {
+                }
             }
 
             val p = b.establish() ?: throw IllegalStateException("VPN izni verilmedi")
@@ -287,34 +320,49 @@ class SufferVpnService : VpnService() {
     private fun alive(): Boolean = controller != null
 
     private fun verify(link: String) {
-        // 1) Sunucu portuna doğrudan TCP erişimi (uygulama VPN dışında, yani gerçek ağ yolu)
+        // 1) Sunucu portuna doğrudan TCP erişimi (bilgi amaçlı; tek başına bağlantıyı başarısız saymaz)
         val srv = parseServer(link)
-        val tcp = if (srv != null) pingServer(srv) else -1
-        if (!alive()) return
-        if (tcp < 0) {
-            fail(1)
-            return
+        var tcp = -1
+        if (srv != null) {
+            for (i in 0 until 2) {
+                tcp = pingServer(srv)
+                if (tcp >= 0 || !alive()) break
+            }
         }
-        VpnState.stage = VpnState.ST_SERVER
-        Thread.sleep(600)
+        if (!alive()) return
+        if (tcp >= 0) VpnState.stage = VpnState.ST_SERVER
+        Thread.sleep(400)
 
-        // 2) Tünel (Xray) üzerinden gerçek internet isteği
+        // 2) Tünel (Xray) üzerinden gerçek internet isteği: birden çok adresten biri yanıt verirse bağlantı gerçektir
         VpnState.stage = VpnState.ST_VERIFY
-        val ipMs = httpViaProxy("http://1.1.1.1/cdn-cgi/trace")
-        if (!alive()) return
-        if (ipMs < 0) {
-            fail(2)
-            return
+        val urls = listOf(
+            "http://connectivitycheck.gstatic.com/generate_204",
+            "http://cp.cloudflare.com/generate_204",
+            "http://www.google.com/generate_204",
+            "http://detectportal.firefox.com/success.txt",
+            "http://www.msftconnecttest.com/connecttest.txt",
+            "http://1.1.1.1/cdn-cgi/trace"
+        )
+        var ms = -1
+        for (u in urls) {
+            if (!alive()) return
+            ms = httpViaProxy(u)
+            if (ms >= 0) break
         }
-        var ms = httpViaProxy("http://connectivitycheck.gstatic.com/generate_204")
         if (!alive()) return
         if (ms < 0) {
-            fail(3)
+            fail(if (tcp < 0) 1 else 2)
             return
         }
         val ms2 = httpViaProxy("http://connectivitycheck.gstatic.com/generate_204")
         if (ms2 >= 0) ms = ms2
         if (!alive()) return
+
+        // Yeni oturum: 2 saatlik süre servis tarafında da takip edilir (uygulama kapalıyken de dolar)
+        getSharedPreferences("suffer", Context.MODE_PRIVATE).edit()
+            .putLong("session_end", System.currentTimeMillis() + 2L * 60L * 60L * 1000L)
+            .putBoolean("session_expired", false)
+            .apply()
 
         VpnState.delayMs = ms
         VpnState.stage = VpnState.ST_DONE
@@ -326,8 +374,8 @@ class SufferVpnService : VpnService() {
             val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))
             val t0 = System.nanoTime()
             val conn = URL(url).openConnection(proxy) as HttpURLConnection
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
             conn.instanceFollowRedirects = false
             val code = conn.responseCode
             conn.disconnect()
@@ -367,6 +415,8 @@ class SufferVpnService : VpnService() {
     }
 
     private fun cleanup() {
+        val wasConnected = VpnState.status == VpnState.CONNECTED
+        synchronized(notifLock) { tickerRunning = false }
         try {
             controller?.stopLoop()
         } catch (e: Exception) {
@@ -384,29 +434,213 @@ class SufferVpnService : VpnService() {
         VpnState.delayMs = -1
         VpnState.failCode = 0
         VpnState.logLines = ""
+        VpnState.rxBps = 0L
+        VpnState.txBps = 0L
+        VpnState.rxTotal = 0L
+        VpnState.txTotal = 0L
         try {
             stopForeground(true)
         } catch (e: Exception) {
         }
+        try {
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIF_ID)
+        } catch (e: Exception) {
+        }
+        if (wasConnected) postDisconnectedNotification()
     }
+
+    private fun isTm(): Boolean =
+        getSharedPreferences("suffer", Context.MODE_PRIVATE).getString("lang", "tr") == "tm"
+
+    private fun ensureChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "VPN", NotificationManager.IMPORTANCE_LOW))
+        }
+    }
+
+    private fun openAppIntent(): PendingIntent {
+        val i = Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        return PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    private fun builder(): Notification.Builder =
+        if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
 
     private fun showNotification() {
         try {
-            val id = "suffer_vpn"
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (Build.VERSION.SDK_INT >= 26) {
-                nm.createNotificationChannel(
-                    NotificationChannel(id, "VPN", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
-            val nb = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, id)
-            else Notification.Builder(this)
-            val n = nb.setContentTitle("Suffer Shadow")
-                .setContentText("VPN")
+            ensureChannel()
+            val n = builder()
+                .setContentTitle("SUFFER SHADOW VPN")
+                .setContentText(if (isTm()) "Birigýär..." else "Bağlanılıyor...")
                 .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentIntent(openAppIntent())
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .build()
-            startForeground(1, n)
+            startForeground(NOTIF_ID, n)
         } catch (e: Exception) {
+        }
+    }
+
+    private fun postDisconnectedNotification() {
+        try {
+            ensureChannel()
+            val nb = builder()
+                .setContentTitle("SUFFER SHADOW VPN")
+                .setContentText(if (isTm()) "Birikme: Kesildi" else "Bağlantı: Kesildi")
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentIntent(openAppIntent())
+                .setAutoCancel(true)
+            if (Build.VERSION.SDK_INT >= 26) nb.setTimeoutAfter(8000L)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIF_ID + 1, nb.build())
+        } catch (e: Exception) {
+        }
+    }
+
+    private fun fmtSpeed(bps: Long): String {
+        val kb = bps / 1024.0
+        return if (kb >= 1024.0) String.format(Locale.US, "%.1f MB/s", kb / 1024.0)
+        else String.format(Locale.US, "%d KB/s", kb.toLong())
+    }
+
+    private fun fmtBytes(b: Long): String {
+        val kb = b / 1024.0
+        val mb = kb / 1024.0
+        val gb = mb / 1024.0
+        return when {
+            gb >= 1.0 -> String.format(Locale.US, "%.2f GB", gb)
+            mb >= 1.0 -> String.format(Locale.US, "%.1f MB", mb)
+            else -> String.format(Locale.US, "%d KB", kb.toLong())
+        }
+    }
+
+    /**
+     * Her saniye: gerçek trafik hızını ölç, bildirimi güncelle, 2 saatlik oturum süresini kontrol et,
+     * 15 sn'de bir tünel gecikmesini yeniden ölç. Hız, bu uygulamanın (Xray çekirdeği dahil) fiziksel ağ
+     * üzerinden VPN sunucusuyla yaptığı gerçek veri trafiğidir (şifreleme ek yükü dahil).
+     */
+    private fun startTicker() {
+        synchronized(notifLock) {
+            if (tickerRunning) return
+            tickerRunning = true
+        }
+        thread {
+            val uid = android.os.Process.myUid()
+            val prefs = getSharedPreferences("suffer", Context.MODE_PRIVATE)
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            var wasConnected = false
+            var baseRx = 0L
+            var baseTx = 0L
+            var lastRx = 0L
+            var lastTx = 0L
+            var lastT = 0L
+            var lastProbe = 0L
+            var fails = 0
+            while (tickerRunning) {
+                try {
+                    val rx = TrafficStats.getUidRxBytes(uid)
+                    val tx = TrafficStats.getUidTxBytes(uid)
+                    val supported = rx >= 0 && tx >= 0
+                    val now = System.currentTimeMillis()
+                    val connected = VpnState.status == VpnState.CONNECTED
+                    var down = 0L
+                    var up = 0L
+                    VpnState.speedSupported = supported
+
+                    if (connected) {
+                        if (!wasConnected) {
+                            wasConnected = true
+                            baseRx = rx; baseTx = tx
+                            lastRx = rx; lastTx = tx
+                            lastT = now
+                            lastProbe = now
+                            fails = 0
+                        } else if (supported && now > lastT) {
+                            val dt = (now - lastT) / 1000.0
+                            down = ((rx - lastRx) / dt).toLong().coerceAtLeast(0L)
+                            up = ((tx - lastTx) / dt).toLong().coerceAtLeast(0L)
+                            lastRx = rx; lastTx = tx; lastT = now
+                            VpnState.rxTotal = (rx - baseRx).coerceAtLeast(0L)
+                            VpnState.txTotal = (tx - baseTx).coerceAtLeast(0L)
+                        }
+
+                        // 2 saatlik oturum süresi (uygulama kapalı olsa da burada dolar)
+                        val end = prefs.getLong("session_end", 0L)
+                        if (end > 0L && now >= end) {
+                            prefs.edit().remove("session_end").putBoolean("session_expired", true).apply()
+                            cleanup()
+                            stopSelf()
+                            break
+                        }
+
+                        // Tünel gecikmesini gerçek istekle yenile
+                        if (now - lastProbe >= 15000L && !probing) {
+                            probing = true
+                            lastProbe = now
+                            thread {
+                                try {
+                                    val ms = httpViaProxy("http://connectivitycheck.gstatic.com/generate_204")
+                                    if (VpnState.status == VpnState.CONNECTED) {
+                                        if (ms >= 0) {
+                                            fails = 0
+                                            VpnState.delayMs = ms
+                                        } else {
+                                            fails++
+                                            if (fails >= 2) VpnState.delayMs = -2
+                                        }
+                                    }
+                                } finally {
+                                    probing = false
+                                }
+                            }
+                        }
+                    }
+
+                    VpnState.rxBps = down
+                    VpnState.txBps = up
+
+                    val tm = prefs.getString("lang", "tr") == "tm"
+                    val stateText = when (VpnState.status) {
+                        VpnState.CONNECTED -> if (tm) "Birikdi" else "Bağlandı"
+                        else -> if (tm) "Birigýär" else "Bağlanılıyor"
+                    }
+                    val head = (if (tm) "Birikme: " else "Bağlantı: ") + stateText
+                    val big: String
+                    val small: String
+                    if (connected && supported) {
+                        big = head + "\n↓ " + fmtSpeed(down) + "\n↑ " + fmtSpeed(up) + "\n\n" +
+                            (if (tm) "Jemi ýüklenen: " else "Toplam indirilen: ") + fmtBytes(VpnState.rxTotal) + "\n" +
+                            (if (tm) "Jemi ugradylan: " else "Toplam yüklenen: ") + fmtBytes(VpnState.txTotal)
+                        small = stateText + "  ↓ " + fmtSpeed(down) + "  ↑ " + fmtSpeed(up)
+                    } else if (connected) {
+                        big = head + "\n" + (if (tm) "Tizligi ölçüp bolmaýar" else "Hız ölçülemiyor")
+                        small = stateText
+                    } else {
+                        big = head
+                        small = stateText
+                    }
+                    val n = builder()
+                        .setContentTitle("SUFFER SHADOW VPN")
+                        .setContentText(small)
+                        .setStyle(Notification.BigTextStyle().bigText(big))
+                        .setSmallIcon(android.R.drawable.ic_lock_lock)
+                        .setContentIntent(openAppIntent())
+                        .setOngoing(true)
+                        .setOnlyAlertOnce(true)
+                        .setShowWhen(false)
+                        .build()
+                    synchronized(notifLock) {
+                        if (tickerRunning) nm.notify(NOTIF_ID, n)
+                    }
+                } catch (e: Exception) {
+                }
+                try {
+                    Thread.sleep(1000L)
+                } catch (e: Exception) {
+                }
+            }
         }
     }
 
@@ -424,6 +658,8 @@ class SufferVpnService : VpnService() {
     companion object {
         const val ACTION_STOP = "com.suffershadow.vpn.STOP"
         const val EXTRA_LINK = "link"
+        const val CHANNEL_ID = "suffer_vpn"
+        const val NOTIF_ID = 1
     }
 }
 
