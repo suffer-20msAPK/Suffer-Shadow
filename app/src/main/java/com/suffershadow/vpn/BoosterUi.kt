@@ -35,14 +35,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch // <-- EKLENEN İMPORT (Hata 75 ve 76'yı çözer)
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
 // --- Efsanevi Açılış Sesi ve Animasyonu ---
+// DÜZELTME: MainActivity'de BoosterHeroCard çağrıldığı için fonksiyon adı değiştirildi.
 @Composable
-fun BoosterCockpitHero(lang: String, prefs: SharedPreferences, feedback: (FeedbackType) -> Unit) {
+fun BoosterHeroCard(lang: String, prefs: SharedPreferences, feedback: (FeedbackType) -> Unit) {
     val tm = lang == "tm"
     val context = LocalContext.current
     var isBoosting by remember { mutableStateOf(false) }
