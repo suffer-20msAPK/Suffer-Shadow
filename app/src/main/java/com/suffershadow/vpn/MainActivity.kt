@@ -826,6 +826,7 @@ private fun HomeTab(
         )
     }
 }
+
 @Composable
 private fun ServersTab(
     lang: String,
@@ -954,14 +955,12 @@ private fun ServersTab(
 }
 @Composable
 private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
-    // Hafızadan giriş durumunu oku (Eğer daha önce giriş yaptıysa true gelir)
     var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
     var phoneId by remember { mutableStateOf(prefs.getString("logged_in_phone", "") ?: "") }
     var showAuthDialog by remember { mutableStateOf(false) }
     var isRegisterMode by remember { mutableStateOf(false) }
 
     if (!isLoggedIn) {
-        // GİRİŞ YAPILMAMIŞSA
         Column(
             Modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -991,7 +990,6 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             )
         }
     } else {
-        // GİRİŞ YAPILMIŞSA (Profil Ekranı)
         val uriHandler = LocalUriHandler.current
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1038,7 +1036,6 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
                     feedback(FeedbackType.TAP)
                     isLoggedIn = false
                     phoneId = ""
-                    // Çıkış yapınca hafızayı temizle
                     prefs.edit().putBoolean("is_logged_in", false).putString("logged_in_phone", "").apply()
                 }
             )
@@ -1052,114 +1049,6 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             onSuccess = { id ->
                 phoneId = id
                 isLoggedIn = true
-                // Giriş başarılı olunca hafızaya kaydet
-                prefs.edit().putBoolean("is_logged_in", true).putString("logged_in_phone", id).apply()
-                showAuthDialog = false
-            }
-        )
-    }
-}
-@Composable
-private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
-    // Hafızadan giriş durumunu oku (Eğer daha önce giriş yaptıysa true gelir)
-    var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
-    var phoneId by remember { mutableStateOf(prefs.getString("logged_in_phone", "") ?: "") }
-    var showAuthDialog by remember { mutableStateOf(false) }
-    var isRegisterMode by remember { mutableStateOf(false) }
-
-    if (!isLoggedIn) {
-        // GİRİŞ YAPILMAMIŞSA
-        Column(
-            Modifier.fillMaxSize().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text("S", color = PurpleLight, fontSize = 80.sp, fontWeight = FontWeight.Black)
-            Text("SUFFER SHADOW", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Spacer(Modifier.height(40.dp))
-            
-            Text(
-                text = "Devam etmek için giriş yapmalısınız.",
-                color = TextMuted, fontSize = 14.sp, textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(20.dp))
-            
-            NeonButton(
-                text = "Giriş Yap",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { feedback(FeedbackType.TAP); isRegisterMode = false; showAuthDialog = true }
-            )
-            Spacer(Modifier.height(12.dp))
-            NeonButton(
-                text = "Yeni Hesap Oluştur",
-                modifier = Modifier.fillMaxWidth(),
-                secondary = true,
-                onClick = { feedback(FeedbackType.TAP); isRegisterMode = true; showAuthDialog = true }
-            )
-        }
-    } else {
-        // GİRİŞ YAPILMIŞSA (Profil Ekranı)
-        val uriHandler = LocalUriHandler.current
-
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("PROFİLİM", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-            Spacer(Modifier.height(4.dp))
-            Text("ID: $phoneId", color = PurpleLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            
-            Spacer(Modifier.height(24.dp))
-            
-            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(16.dp)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("SOSYAL MEDYA", color = PurpleLight, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                    
-                    SocialMediaRow(
-                        icon = "🎵", title = "TikTok Kanalım", 
-                        buttonText = "Abone Ol", buttonColor = Color(0xFF00F2FE),
-                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://tiktok.com/@suffer_pubg") } }
-                    )
-                    SocialMediaRow(
-                        icon = "✈️", title = "Suffere Yaz", 
-                        buttonText = "Mesaj", buttonColor = Color(0xFF229ED9),
-                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_pubg") } }
-                    )
-                    SocialMediaRow(
-                        icon = "📢", title = "Telegram Kanalımız", 
-                        buttonText = "Abone Ol", buttonColor = Color(0xFF229ED9),
-                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffervpn") } }
-                    )
-                    SocialMediaRow(
-                        icon = "💬", title = "Telegram Sohbetimiz", 
-                        buttonText = "Katıl", buttonColor = Color(0xFF229ED9),
-                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_chat") } }
-                    )
-                }
-            }
-            
-            Spacer(Modifier.height(30.dp))
-            
-            NeonButton(
-                text = "Çıkış Yap",
-                modifier = Modifier.fillMaxWidth(),
-                secondary = true,
-                onClick = { 
-                    feedback(FeedbackType.TAP)
-                    isLoggedIn = false
-                    phoneId = ""
-                    // Çıkış yapınca hafızayı temizle
-                    prefs.edit().putBoolean("is_logged_in", false).putString("logged_in_phone", "").apply()
-                }
-            )
-        }
-    }
-
-    if (showAuthDialog) {
-        AuthDialog(
-            isRegister = isRegisterMode,
-            onDismiss = { showAuthDialog = false },
-            onSuccess = { id ->
-                phoneId = id
-                isLoggedIn = true
-                // Giriş başarılı olunca hafızaya kaydet
                 prefs.edit().putBoolean("is_logged_in", true).putString("logged_in_phone", id).apply()
                 showAuthDialog = false
             }
@@ -1243,23 +1132,19 @@ private fun AuthDialog(
             TextButton(
                 onClick = {
                     errorMsg = ""
-                    // 1. Numara uzunluk kontrolü
                     if (phone.length != 8) {
                         errorMsg = "Numara +993 olmadan 8 haneli olmalıdır."
                         return@TextButton
                     }
-                    // 2. Türkmenistan operatör kodları kontrolü
                     val prefix = phone.take(2)
                     if (prefix !in listOf("61", "62", "63", "64", "65", "71")) {
                         errorMsg = "Geçersiz numara! (61, 62, 63, 64, 65, 71 ile başlamalı)"
                         return@TextButton
                     }
-                    // 3. Şifre uzunluk kontrolü
                     if (pass.length < 4) {
                         errorMsg = "Şifre en az 4 karakter olmalıdır."
                         return@TextButton
                     }
-                    // 4. Kayıt olurken şifre eşleşme kontrolü
                     if (isRegister && pass != passConfirm) {
                         errorMsg = "Şifreler uyuşmuyor!"
                         return@TextButton
@@ -1271,7 +1156,6 @@ private fun AuthDialog(
                     scope.launch {
                         try {
                             if (isRegister) {
-                                // KAYIT OLMA İŞLEMİ
                                 val exists = UserManager.checkUserExists(phone)
                                 if (exists) {
                                     errorMsg = "Bu numara zaten kayıtlı. Lütfen Giriş Yapın."
@@ -1279,7 +1163,7 @@ private fun AuthDialog(
                                 } else {
                                     val (success, msg) = UserManager.registerUser(phone, pass, deviceId)
                                     if (success) {
-                                        onSuccess(phone) // Başarılıysa profil ekranına geç
+                                        onSuccess(phone)
                                     } else {
                                         errorMsg = msg
                                         isLoading = false
@@ -1287,10 +1171,9 @@ private fun AuthDialog(
                                     }
                                 }
                             } else {
-                                // GİRİŞ YAPMA İŞLEMİ
                                 val (success, msg) = UserManager.loginUser(phone, pass, deviceId)
                                 if (success) {
-                                    onSuccess(phone) // Başarılıysa profil ekranına geç
+                                    onSuccess(phone)
                                 } else {
                                     errorMsg = msg
                                     isLoading = false
@@ -1298,7 +1181,6 @@ private fun AuthDialog(
                                 }
                             }
                         } catch (e: Exception) {
-                            // Herhangi bir hata olursa butonu eski haline getir ve hatayı göster
                             errorMsg = "Bağlantı Hatası: ${e.message}"
                             isLoading = false
                             android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
