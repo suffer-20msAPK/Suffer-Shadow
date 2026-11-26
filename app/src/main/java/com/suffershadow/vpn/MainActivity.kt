@@ -826,7 +826,6 @@ private fun HomeTab(
         )
     }
 }
-
 @Composable
 private fun ServersTab(
     lang: String,
@@ -1087,8 +1086,7 @@ private fun AuthDialog(isRegister: Boolean, onDismiss: () -> Unit, onSuccess: (S
                         onValueChange = { if (it.length <= 8) phone = it.filter { char -> char.isDigit() } },
                         placeholder = { Text("61234567") },
                         singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PurpleMain, unfocusedBorderColor = TextMuted)
+                        modifier = Modifier.weight(1f)
                     )
                 }
                 OutlinedTextField(
@@ -1096,8 +1094,7 @@ private fun AuthDialog(isRegister: Boolean, onDismiss: () -> Unit, onSuccess: (S
                     onValueChange = { pass = it },
                     label = { Text("Şifre") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PurpleMain, unfocusedBorderColor = TextMuted)
+                    modifier = Modifier.fillMaxWidth()
                 )
                 if (isRegister) {
                     OutlinedTextField(
@@ -1105,8 +1102,7 @@ private fun AuthDialog(isRegister: Boolean, onDismiss: () -> Unit, onSuccess: (S
                         onValueChange = { passConfirm = it },
                         label = { Text("Şifreyi Onayla") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PurpleMain, unfocusedBorderColor = TextMuted)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
@@ -1351,7 +1347,6 @@ fun SufferShadowTheme(content: @Composable () -> Unit) {
         content = content
     )
 }
-
 object GamePrefs {
     const val BLOCK_BACKGROUND = "gm_block_bg"
     const val PRIORITIZE_GAME = "gm_priority"
