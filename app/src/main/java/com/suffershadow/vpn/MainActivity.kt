@@ -1151,30 +1151,39 @@ private fun AuthDialog(
                     val deviceId = RedeemManager.getDeviceId(context)
 
                     scope.launch {
-                        if (isRegister) {
-                            // KAYIT OLMA İŞLEMİ
-                            val exists = UserManager.checkUserExists(phone)
-                            if (exists) {
-                                errorMsg = "Bu numara zaten kayıtlı. Lütfen Giriş Yapın."
-                                isLoading = false
+                        try {
+                            if (isRegister) {
+                                // KAYIT OLMA İŞLEMİ
+                                val exists = UserManager.checkUserExists(phone)
+                                if (exists) {
+                                    errorMsg = "Bu numara zaten kayıtlı. Lütfen Giriş Yapın."
+                                    isLoading = false
+                                } else {
+                                    val (success, msg) = UserManager.registerUser(phone, pass, deviceId)
+                                    if (success) {
+                                        onSuccess(phone) // Başarılıysa profil ekranına geç
+                                    } else {
+                                        errorMsg = msg
+                                        isLoading = false
+                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                }
                             } else {
-                                val (success, msg) = UserManager.registerUser(phone, pass, deviceId)
+                                // GİRİŞ YAPMA İŞLEMİ
+                                val (success, msg) = UserManager.loginUser(phone, pass, deviceId)
                                 if (success) {
                                     onSuccess(phone) // Başarılıysa profil ekranına geç
                                 } else {
                                     errorMsg = msg
                                     isLoading = false
+                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                                 }
                             }
-                        } else {
-                            // GİRİŞ YAPMA İŞLEMİ
-                            val (success, msg) = UserManager.loginUser(phone, pass, deviceId)
-                            if (success) {
-                                onSuccess(phone) // Başarılıysa profil ekranına geç
-                            } else {
-                                errorMsg = msg
-                                isLoading = false
-                            }
+                        } catch (e: Exception) {
+                            // Herhangi bir hata olursa butonu eski haline getir ve hatayı göster
+                            errorMsg = "Bağlantı Hatası: ${e.message}"
+                            isLoading = false
+                            android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
                 },
