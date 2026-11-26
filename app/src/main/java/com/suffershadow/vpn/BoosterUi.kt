@@ -35,14 +35,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch // <-- EKLENEN İMPORT (Hata 75 ve 76'yı çözer)
+import kotlinx.coroutines.launch // HATA ÇÖZÜMÜ: Eklendi
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
 // --- Efsanevi Açılış Sesi ve Animasyonu ---
-// DÜZELTME: MainActivity'de BoosterHeroCard çağrıldığı için fonksiyon adı değiştirildi.
+// HATA ÇÖZÜMÜ: Fonksiyon adı MainActivity ile uyumlu olması için BoosterHeroCard yapıldı
 @Composable
 fun BoosterHeroCard(lang: String, prefs: SharedPreferences, feedback: (FeedbackType) -> Unit) {
     val tm = lang == "tm"
@@ -216,7 +216,7 @@ internal fun RedeemSection(lang: String, prefs: SharedPreferences, feedback: (Fe
                 onClick = {
                     if (code.length < 4) return@NeonButton
                     busy = true
-                    scope.launch {
+                    scope.launch { // HATA ÇÖZÜMÜ: launch importu eklendiği için burası artık çalışacak
                         val (success, m) = RedeemManager.redeemCode(context, code.trim())
                         busy = false
                         msg = m
