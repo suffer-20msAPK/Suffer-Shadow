@@ -666,9 +666,10 @@ fun AppRoot() {
                         gameState.backup = null
                         android.widget.Toast.makeText(context, if (lang == "tm") "Ölçeg taryhy arassalandy" else "Ölçüm geçmişi temizlendi", android.widget.Toast.LENGTH_SHORT).show()
                     },
-                    prefs = prefs,
-                    feedback = feedback
-                )
+                        prefs = prefs,
+    feedback = feedback,
+    onOpenVip = { showVipScreen = true }
+)
                 else -> ProfileTab(prefs = prefs, feedback = feedback)
             }
         }
@@ -1423,8 +1424,9 @@ private fun GameToolsTab(
     onSound: (Boolean) -> Unit,
     onVibration: (Boolean) -> Unit,
     onClearMeasurements: () -> Unit,
-    prefs: android.content.SharedPreferences,
-    feedback: (FeedbackType) -> Unit
+        prefs: android.content.SharedPreferences,
+    feedback: (FeedbackType) -> Unit,
+    onOpenVip: () -> Unit
 ) {
     val tm = lang == "tm"
 
@@ -1450,7 +1452,30 @@ private fun GameToolsTab(
         
         Spacer(Modifier.height(24.dp))
 
-        RedeemSection(lang = lang, prefs = prefs, feedback = feedback)
+        AnimatedSurface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(12.dp),
+    color = CardBg,
+    onClick = { feedback(FeedbackType.TAP); onOpenVip() }
+) {
+    Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("🎟️", fontSize = 32.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(12.dp))
+        NeonButton(
+            text = if (tm) "KODY ULAN" else "KODU KULLAN",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { feedback(FeedbackType.TAP); onOpenVip() }
+        )
+    }
+        }
 
         Spacer(Modifier.height(30.dp))
         
