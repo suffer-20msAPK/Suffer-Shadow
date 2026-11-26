@@ -1503,122 +1503,113 @@ private suspend fun rankServers(list: List<Server>): List<GameRanked> = emptyLis
 
 @Composable
 private fun GameBackupDialog(
-    lang: String,
-    ranked: GameRanked,
-    failedName: String,
-    auto: Boolean,
-    onSwitch: () -> Unit,
-    onDismiss: () -> Unit
-) {}
-
 @Composable
 internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
-            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
-            Column(Modifier.padding(16.dp), content = content)
-        }
+    AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
+        Column(Modifier.padding(16.dp), content = content)
     }
+}
 
-    @Composable
-    private fun GameToolsTab(
-        lang: String,
-        state: GameToolsState,
-        current: Server?,
-        allServers: List<Server>,
-        scope: CoroutineScope,
-        onUseServer: (Server) -> Unit,
-        input: String,
-        message: String,
-        soundEnabled: Boolean,
-        vibrationEnabled: Boolean,
-        onInput: (String) -> Unit,
-        onPaste: () -> Unit,
-        onAdd: () -> Unit,
-        onLang: (String) -> Unit,
-        onSound: (Boolean) -> Unit,
-        onVibration: (Boolean) -> Unit,
-        onClearMeasurements: () -> Unit,
-        prefs: android.content.SharedPreferences,
-        feedback: (FeedbackType) -> Unit,
-        onOpenVip: () -> Unit
+@Composable
+private fun GameToolsTab(
+    lang: String,
+    state: GameToolsState,
+    current: Server?,
+    allServers: List<Server>,
+    scope: CoroutineScope,
+    onUseServer: (Server) -> Unit,
+    input: String,
+    message: String,
+    soundEnabled: Boolean,
+    vibrationEnabled: Boolean,
+    onInput: (String) -> Unit,
+    onPaste: () -> Unit,
+    onAdd: () -> Unit,
+    onLang: (String) -> Unit,
+    onSound: (Boolean) -> Unit,
+    onVibration: (Boolean) -> Unit,
+    onClearMeasurements: () -> Unit,
+    prefs: android.content.SharedPreferences,
+    feedback: (FeedbackType) -> Unit,
+    onOpenVip: () -> Unit
+) {
+    val tm = lang == "tm"
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(18.dp)
     ) {
-        val tm = lang == "tm"
+        Text(
+            text = if (tm) "OÝUN MERKEZI" else "OYUN MERKEZİ",
+            color = Color.White,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 2.sp
+        )
+        Text(
+            text = if (tm) "Premium aýratynlyklar we kod ulanmak" else "Premium özellikler ve kod kullanımı",
+            color = PurpleLight,
+            fontSize = 13.sp,
+            letterSpacing = 1.sp
+        )
+        
+        Spacer(Modifier.height(24.dp))
 
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(18.dp)
+        AnimatedSurface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = CardBg,
+            onClick = { feedback(FeedbackType.TAP); onOpenVip() }
         ) {
-            Text(
-                text = if (tm) "OÝUN MERKEZI" else "OYUN MERKEZİ",
-                color = Color.White,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.sp
-            )
-            Text(
-                text = if (tm) "Premium aýratynlyklar we kod ulanmak" else "Premium özellikler ve kod kullanımı",
-                color = PurpleLight,
-                fontSize = 13.sp,
-                letterSpacing = 1.sp
-            )
-            
-            Spacer(Modifier.height(24.dp))
-
-            AnimatedSurface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = CardBg,
-                onClick = { feedback(FeedbackType.TAP); onOpenVip() }
-            ) {
-                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🎟️", fontSize = 32.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    NeonButton(
-                        text = if (tm) "KODY ULAN" else "KODU KULLAN",
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { feedback(FeedbackType.TAP); onOpenVip() }
-                    )
-                }
+            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("🎟️", fontSize = 32.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(12.dp))
+                NeonButton(
+                    text = if (tm) "KODY ULAN" else "KODU KULLAN",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { feedback(FeedbackType.TAP); onOpenVip() }
+                )
             }
+        }
 
-            Spacer(Modifier.height(30.dp))
-            
-            AnimatedSurface(
-                modifier = Modifier.fillMaxWidth(),
-                color = CardBg,
-                shape = RoundedCornerShape(12.dp)
+        Spacer(Modifier.height(30.dp))
+        
+        AnimatedSurface(
+            modifier = Modifier.fillMaxWidth(),
+            color = CardBg,
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
-                    Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("⚡", fontSize = 40.sp)
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = if (tm) "Täze oýun gurallary ýakyn wagtda goşular" else "Yeni oyun araçları çok yakında eklenecek",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = if (tm) "Ping testleri, Game Booster we beýlekiler täzeden guralýar." else "Ping testleri, Game Booster ve diğerleri sıfırdan, daha profesyonel bir tasarımla inşa ediliyor.",
-                        color = TextMuted,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 16.sp
-                    )
-                }
+                Text("⚡", fontSize = 40.sp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = if (tm) "Täze oýun gurallary ýakyn wagtda goşular" else "Yeni oyun araçları çok yakında eklenecek",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = if (tm) "Ping testleri, Game Booster we beýlekiler täzeden guralýar." else "Ping testleri, Game Booster ve diğerleri sıfırdan, daha profesyonel bir tasarımla inşa ediliyor.",
+                    color = TextMuted,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 16.sp
+                )
             }
         }
     }
