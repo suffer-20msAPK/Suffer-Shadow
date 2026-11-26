@@ -463,7 +463,7 @@ private fun BoosterIntro(
                     val p = prog(time(), tl.textStart + 250f * tl.scale, tl.textStart + 1000f * tl.scale)
                     if (p > 0f && p < 1f) {
                         val x = -size.width * 0.3f + p * size.width * 1.6f
-                        val half = 50.dp.toPx()
+                                val half = 50.dp.toPx()
                         drawRect(
                             Brush.linearGradient(
                                 listOf(Color.Transparent, Color.White.copy(alpha = 0.9f), Color.Transparent),
@@ -500,8 +500,9 @@ private fun BoosterIntro(
 // GAME BOOSTER EKRANI (tam ekran): açılış + ana panel
 // =====================================================================
 
+// DÜZELTME: 'public' yerine 'internal' yapıldı, böylece MainActivity'deki internal FeedbackType hatası çözüldü.
 @Composable
-fun GameBoosterScreen(
+internal fun GameBoosterScreen(
     lang: String,
     prefs: SharedPreferences,
     feedback: (FeedbackType) -> Unit,
@@ -872,7 +873,7 @@ private fun BoosterPanel(
         Spacer(Modifier.height(16.dp))
         val cpu = BoosterState.cpuPct
         val connected = VpnState.status == VpnState.CONNECTED
-        val tempCol = when {
+        val temp        val tempCol = when {
             stats.tempC >= 42f -> RedSoft
             stats.tempC >= 38f -> Warn
             else -> AccentGreen
