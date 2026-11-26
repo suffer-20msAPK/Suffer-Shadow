@@ -82,6 +82,8 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import org.json.JSONArray
+import java.net.HttpURLConnection
 
 // ==========================================
 // CYBERPUNK RENK PALETİ (B PLANI)
@@ -98,8 +100,9 @@ internal val RedSoft = Color(0xFFFF3366)
 internal val TextMuted = Color(0xFF8E92A6)
 internal val BorderPurple = Color(0xFF6C00B8)
 
-private const val SOCIAL_MEDIA_URL = "https://raw.githubusercontent.com/suffer-20msAPK/Suffer-Shadow/main/servers/social.txt"
-private const val PUBG_URL = "https://raw.githubusercontent.com/suffer-20msAPK/Suffer-Shadow/main/servers/pubg.txt"
+// SUPABASE BAĞLANTI AYARLARI
+private const val SUPABASE_URL = "https://yeizclxibejfqhtfyqmi.supabase.co"
+private const val SUPABASE_ANON_KEY = "sb_publishable_U8scDtQmhf830Pb5r65jxw_paP_dRRa"
 
 internal enum class FeedbackType { TAP, CONNECT, DISCONNECT, ERROR }
 
@@ -186,15 +189,29 @@ fun pingServer(s: Server): Int {
     }
 }
 
-fun fetchRemoteServers(url: String, category: String, onResult: (List<Server>) -> Unit) {
+// SUPABASE'DEN SUNUCULARI ÇEKEN YENİ FONKSİYON
+fun fetchRemoteServers(category: String, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
         try {
-            val connection = java.net.URL(url).openConnection()
-            connection.connectTimeout = 5000
-            val text = connection.getInputStream().bufferedReader().readText()
-            text.lines().forEach { line ->
-                parseServer(line, isBuiltIn = true, category = category)?.let { list.add(it) }
+            val url = java.net.URL("$SUPABASE_URL/rest/v1/servers?category=eq.$category&select=*")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            conn.setRequestProperty("apikey", SUPABASE_ANON_KEY)
+            
+            if (conn.responseCode in 200..299) {
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val jsonArray = JSONArray(response)
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val link = obj.optString("link", "")
+                    val name = obj.optString("name", "")
+                    parseServer(link, isBuiltIn = true, category = category)?.let { 
+                        list.add(it.copy(name = name)) 
+                    }
+                }
             }
         } catch (_: Exception) { }
         Handler(Looper.getMainLooper()).post { onResult(list) }
@@ -313,17 +330,19 @@ fun AppRoot() {
     val builtInSocial = remember { mutableStateListOf<Server>() }
     val builtInPubg = remember { mutableStateListOf<Server>() }
 
+    // BURASI GÜNCELLENDİ: Sadece Supabase'den çeker, Test Et'e basılmadıkça kaybolmaz
     val loadRemoteData = {
-        fetchRemoteServers(SOCIAL_MEDIA_URL, "social") { fetched ->
+        fetchRemoteServers("social") { fetched ->
             builtInSocial.clear()
             builtInSocial.addAll(fetched)
         }
-        fetchRemoteServers(PUBG_URL, "pubg") { fetched ->
+        fetchRemoteServers("pubg") { fetched ->
             builtInPubg.clear()
             builtInPubg.addAll(fetched)
         }
     }
 
+    // Uygulama ilk açıldığında 1 kez çalışır
     LaunchedEffect(Unit) { loadRemoteData() }
 
     val pings = remember { mutableStateMapOf<String, Int>() }
@@ -675,6 +694,7 @@ fun AppRoot() {
         }
     }
 }
+
 @Composable
 private fun HomeTab(
     lang: String,
@@ -826,7 +846,6 @@ private fun HomeTab(
         )
     }
 }
-
 @Composable
 private fun ServersTab(
     lang: String,
@@ -953,6 +972,7 @@ private fun ServersTab(
         }
     }
 }
+
 @Composable
 private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
     var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
@@ -1055,7 +1075,6 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
         )
     }
 }
-
 @Composable
 private fun SocialMediaRow(icon: String, title: String, buttonText: String, buttonColor: Color, onClick: () -> Unit) {
     Row(
@@ -1201,6 +1220,7 @@ private fun AuthDialog(
         }
     )
 }
+
 @Composable
 internal fun SectionHeading(number: String, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 9.dp)) {
@@ -1493,111 +1513,112 @@ private fun GameBackupDialog(
 
 @Composable
 internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
-    AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
-        Column(Modifier.padding(16.dp), content = content)
-    }
-}
-
-@Composable
-private fun GameToolsTab(
-    lang: String,
-    state: GameToolsState,
-    current: Server?,
-    allServers: List<Server>,
-    scope: CoroutineScope,
-    onUseServer: (Server) -> Unit,
-    input: String,
-    message: String,
-    soundEnabled: Boolean,
-    vibrationEnabled: Boolean,
-    onInput: (String) -> Unit,
-    onPaste: () -> Unit,
-    onAdd: () -> Unit,
-    onLang: (String) -> Unit,
-    onSound: (Boolean) -> Unit,
-    onVibration: (Boolean) -> Unit,
-    onClearMeasurements: () -> Unit,
-    prefs: android.content.SharedPreferences,
-    feedback: (FeedbackType) -> Unit,
-    onOpenVip: () -> Unit
-) {
-    val tm = lang == "tm"
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp)
-    ) {
-        Text(
-            text = if (tm) "OÝUN MERKEZI" else "OYUN MERKEZİ",
-            color = Color.White,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 2.sp
-        )
-        Text(
-            text = if (tm) "Premium aýratynlyklar we kod ulanmak" else "Premium özellikler ve kod kullanımı",
-            color = PurpleLight,
-            fontSize = 13.sp,
-            letterSpacing = 1.sp
-        )
-        
-        Spacer(Modifier.height(24.dp))
-
-        AnimatedSurface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            color = CardBg,
-            onClick = { feedback(FeedbackType.TAP); onOpenVip() }
-        ) {
-            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🎟️", fontSize = 32.sp)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(12.dp))
-                NeonButton(
-                    text = if (tm) "KODY ULAN" else "KODU KULLAN",
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { feedback(FeedbackType.TAP); onOpenVip() }
-                )
-            }
+            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
+            Column(Modifier.padding(16.dp), content = content)
         }
+    }
 
-        Spacer(Modifier.height(30.dp))
-        
-        AnimatedSurface(
-            modifier = Modifier.fillMaxWidth(),
-            color = CardBg,
-            shape = RoundedCornerShape(12.dp)
+    @Composable
+    private fun GameToolsTab(
+        lang: String,
+        state: GameToolsState,
+        current: Server?,
+        allServers: List<Server>,
+        scope: CoroutineScope,
+        onUseServer: (Server) -> Unit,
+        input: String,
+        message: String,
+        soundEnabled: Boolean,
+        vibrationEnabled: Boolean,
+        onInput: (String) -> Unit,
+        onPaste: () -> Unit,
+        onAdd: () -> Unit,
+        onLang: (String) -> Unit,
+        onSound: (Boolean) -> Unit,
+        onVibration: (Boolean) -> Unit,
+        onClearMeasurements: () -> Unit,
+        prefs: android.content.SharedPreferences,
+        feedback: (FeedbackType) -> Unit,
+        onOpenVip: () -> Unit
+    ) {
+        val tm = lang == "tm"
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(18.dp)
         ) {
-            Column(
-                Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Text(
+                text = if (tm) "OÝUN MERKEZI" else "OYUN MERKEZİ",
+                color = Color.White,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 2.sp
+            )
+            Text(
+                text = if (tm) "Premium aýratynlyklar we kod ulanmak" else "Premium özellikler ve kod kullanımı",
+                color = PurpleLight,
+                fontSize = 13.sp,
+                letterSpacing = 1.sp
+            )
+            
+            Spacer(Modifier.height(24.dp))
+
+            AnimatedSurface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = CardBg,
+                onClick = { feedback(FeedbackType.TAP); onOpenVip() }
             ) {
-                Text("⚡", fontSize = 40.sp)
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = if (tm) "Täze oýun gurallary ýakyn wagtda goşular" else "Yeni oyun araçları çok yakında eklenecek",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = if (tm) "Ping testleri, Game Booster we beýlekiler täzeden guralýar." else "Ping testleri, Game Booster ve diğerleri sıfırdan, daha profesyonel bir tasarımla inşa ediliyor.",
-                    color = TextMuted,
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 16.sp
-                )
+                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("🎟️", fontSize = 32.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    NeonButton(
+                        text = if (tm) "KODY ULAN" else "KODU KULLAN",
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { feedback(FeedbackType.TAP); onOpenVip() }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(30.dp))
+            
+            AnimatedSurface(
+                modifier = Modifier.fillMaxWidth(),
+                color = CardBg,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("⚡", fontSize = 40.sp)
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = if (tm) "Täze oýun gurallary ýakyn wagtda goşular" else "Yeni oyun araçları çok yakında eklenecek",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = if (tm) "Ping testleri, Game Booster we beýlekiler täzeden guralýar." else "Ping testleri, Game Booster ve diğerleri sıfırdan, daha profesyonel bir tasarımla inşa ediliyor.",
+                        color = TextMuted,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 16.sp
+                    )
+                }
             }
         }
     }
