@@ -1065,13 +1065,21 @@ private fun SocialMediaRow(icon: String, title: String, buttonText: String, butt
 }
 
 @Composable
-private fun AuthDialog(isRegister: Boolean, onDismiss: () -> Unit, onSuccess: (String) -> Unit) {
+private fun AuthDialog(
+    isRegister: Boolean,
+    onDismiss: () -> Unit,
+    onSuccess: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var phone by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var passConfirm by remember { mutableStateOf("") }
-    
+    var errorMsg by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isLoading) onDismiss() },
         containerColor = CardBg,
         titleContentColor = Color.White,
         textContentColor = TextMuted,
@@ -1086,7 +1094,8 @@ private fun AuthDialog(isRegister: Boolean, onDismiss: () -> Unit, onSuccess: (S
                         onValueChange = { if (it.length <= 8) phone = it.filter { char -> char.isDigit() } },
                         placeholder = { Text("61234567") },
                         singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = !isLoading
                     )
                 }
                 OutlinedTextField(
@@ -1094,7 +1103,8 @@ private fun AuthDialog(isRegister: Boolean, onDismiss: () -> Unit, onSuccess: (S
                     onValueChange = { pass = it },
                     label = { Text("Şifre") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading
                 )
                 if (isRegister) {
                     OutlinedTextField(
@@ -1102,22 +1112,83 @@ private fun AuthDialog(isRegister: Boolean, onDismiss: () -> Unit, onSuccess: (S
                         onValueChange = { passConfirm = it },
                         label = { Text("Şifreyi Onayla") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading
                     )
+                }
+                if (errorMsg.isNotEmpty()) {
+                    Text(errorMsg, color = RedSoft, fontSize = 12.sp)
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                if (phone.isNotEmpty() && pass.isNotEmpty()) {
-                    onSuccess(phone)
+            TextButton(
+                onClick = {
+                    errorMsg = ""
+                    // 1. Numara uzunluk kontrolü
+                    if (phone.length != 8) {
+                        errorMsg = "Numara +993 olmadan 8 haneli olmalıdır."
+                        return@TextButton
+                    }
+                    // 2. Türkmenistan operatör kodları kontrolü
+                    val prefix = phone.take(2)
+                    if (prefix !in listOf("61", "62", "63", "64", "65", "71")) {
+                        errorMsg = "Geçersiz numara! (61, 62, 63, 64, 65, 71 ile başlamalı)"
+                        return@TextButton
+                    }
+                    // 3. Şifre uzunluk kontrolü
+                    if (pass.length < 4) {
+                        errorMsg = "Şifre en az 4 karakter olmalıdır."
+                        return@TextButton
+                    }
+                    // 4. Kayıt olurken şifre eşleşme kontrolü
+                    if (isRegister && pass != passConfirm) {
+                        errorMsg = "Şifreler uyuşmuyor!"
+                        return@TextButton
+                    }
+
+                    isLoading = true
+                    val deviceId = RedeemManager.getDeviceId(context)
+
+                    scope.launch {
+                        if (isRegister) {
+                            // KAYIT OLMA İŞLEMİ
+                            val exists = UserManager.checkUserExists(phone)
+                            if (exists) {
+                                errorMsg = "Bu numara zaten kayıtlı. Lütfen Giriş Yapın."
+                                isLoading = false
+                            } else {
+                                val (success, msg) = UserManager.registerUser(phone, pass, deviceId)
+                                if (success) {
+                                    onSuccess(phone) // Başarılıysa profil ekranına geç
+                                } else {
+                                    errorMsg = msg
+                                    isLoading = false
+                                }
+                            }
+                        } else {
+                            // GİRİŞ YAPMA İŞLEMİ
+                            val (success, msg) = UserManager.loginUser(phone, pass, deviceId)
+                            if (success) {
+                                onSuccess(phone) // Başarılıysa profil ekranına geç
+                            } else {
+                                errorMsg = msg
+                                isLoading = false
+                            }
+                        }
+                    }
+                },
+                enabled = !isLoading
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PurpleLight, strokeWidth = 2.dp)
+                } else {
+                    Text(if (isRegister) "Kayıt Ol" else "Giriş Yap", color = PurpleLight, fontWeight = FontWeight.Bold)
                 }
-            }) {
-                Text(if (isRegister) "Kayıt Ol" else "Giriş Yap", color = PurpleLight, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Vazgeç", color = TextMuted) }
+            TextButton(onClick = onDismiss, enabled = !isLoading) { Text("Vazgeç", color = TextMuted) }
         }
     )
 }
