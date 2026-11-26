@@ -83,25 +83,26 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
-internal val BgDark = Color(0xFF080B18)
-internal val BgTop = Color(0xFF10152B)
-internal val CardBg = Color(0xFF151B33)
-internal val CardBg2 = Color(0xFF1B2140)
-internal val PurpleMain = Color(0xFF7B20FF)
-internal val PurpleLight = Color(0xFFB46BFF)
-internal val PurpleDeep = Color(0xFF4210A8)
-internal val AccentGreen = Color(0xFF00EFA8)
-internal val RedSoft = Color(0xFFFF7185)
-internal val TextMuted = Color(0xFFA7AEC8)
-internal val BorderPurple = Color(0xFF50308C)
+// ==========================================
+// CYBERPUNK RENK PALETİ (B PLANI)
+// ==========================================
+internal val BgDark = Color(0xFF07080D)
+internal val BgTop = Color(0xFF121422)
+internal val CardBg = Color(0xFF121422)
+internal val CardBg2 = Color(0xFF1C1E32)
+internal val PurpleMain = Color(0xFF9D00FF)
+internal val PurpleLight = Color(0xFFD9A0FF)
+internal val PurpleDeep = Color(0xFF5A00B5)
+internal val AccentGreen = Color(0xFF00FFCC)
+internal val RedSoft = Color(0xFFFF3366)
+internal val TextMuted = Color(0xFF8E92A6)
+internal val BorderPurple = Color(0xFF6C00B8)
 
-// UZAKTAN SUNUCU LİNKLERİ (BURAYA KENDİ LİNKLERİNİZİ YAPIŞTIRIN)
 private const val SOCIAL_MEDIA_URL = "https://raw.githubusercontent.com/suffer-20msAPK/Suffer-Shadow/main/servers/social.txt"
 private const val PUBG_URL = "https://raw.githubusercontent.com/suffer-20msAPK/Suffer-Shadow/main/servers/pubg.txt"
 
 internal enum class FeedbackType { TAP, CONNECT, DISCONNECT, ERROR }
 
-/** Kayan panel / bildirimden gelen sekme isteği. tab: 0 Ana Menü, 1 Oyun, 2 Profil. */
 object NavRequest {
     var seq by mutableStateOf(0)
     var tab = 0
@@ -142,8 +143,8 @@ data class Server(
     val name: String, 
     val host: String, 
     val port: Int,
-    val isBuiltIn: Boolean = false, // İçindekiler mi Özel mi?
-    val category: String = "custom" // "social", "pubg", "custom"
+    val isBuiltIn: Boolean = false,
+    val category: String = "custom"
 )
 
 fun parseServer(raw: String, isBuiltIn: Boolean = false, category: String = "custom"): Server? {
@@ -185,7 +186,6 @@ fun pingServer(s: Server): Int {
     }
 }
 
-// Uzaktan Sunucu Çekme Fonksiyonu
 fun fetchRemoteServers(url: String, category: String, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
@@ -196,7 +196,7 @@ fun fetchRemoteServers(url: String, category: String, onResult: (List<Server>) -
             text.lines().forEach { line ->
                 parseServer(line, isBuiltIn = true, category = category)?.let { list.add(it) }
             }
-        } catch (_: Exception) { /* Hata durumunda boş liste döner */ }
+        } catch (_: Exception) { }
         Handler(Looper.getMainLooper()).post { onResult(list) }
     }
 }
@@ -212,7 +212,6 @@ private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Col
     if (real && VpnState.delayMs >= 0) {
         return (if (tm) "Tunel gijikmesi • ${VpnState.delayMs} ms" else "Tünel gecikmesi • ${VpnState.delayMs} ms") to AccentGreen
     }
-    // Kırmızı yazı (internet yok) iptal edildi, direkt bağlandı gösteriyor.
     if (real) {
         return (if (tm) "Birikdi" else "Bağlandı") to AccentGreen
     }
@@ -282,19 +281,18 @@ fun AppRoot() {
     val clipboard = LocalClipboardManager.current
     val prefs = remember { context.getSharedPreferences("suffer", Context.MODE_PRIVATE) }
     var showVipScreen by remember { mutableStateOf(false) }
-var isVipUser by remember { mutableStateOf(false) }
+    var isVipUser by remember { mutableStateOf(false) }
 
-LaunchedEffect(Unit) {
-    val (isVip, _) = RedeemManager.checkVip(context)
-    isVipUser = isVip
-}
+    LaunchedEffect(Unit) {
+        val (isVip, _) = RedeemManager.checkVip(context)
+        isVipUser = isVip
+    }
 
     var lang by remember { mutableStateOf(prefs.getString("lang", "tr") ?: "tr") }
     var soundEnabled by remember { mutableStateOf(prefs.getBoolean("sound_enabled", true)) }
     var vibrationEnabled by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", true)) }
     val feedback = rememberUiFeedback(soundEnabled, vibrationEnabled)
 
-    // Android 13+: bildirim panelinde VPN durumu/hızı görünsün diye izin iste
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(Unit) {
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
@@ -312,7 +310,6 @@ LaunchedEffect(Unit) {
         list
     }
 
-    // Uzaktan gelen sunucuları tutacağımız listeler
     val builtInSocial = remember { mutableStateListOf<Server>() }
     val builtInPubg = remember { mutableStateListOf<Server>() }
 
@@ -327,15 +324,13 @@ LaunchedEffect(Unit) {
         }
     }
 
-    // Uygulama açıldığında uzaktan sunucuları çek
     LaunchedEffect(Unit) { loadRemoteData() }
 
     val pings = remember { mutableStateMapOf<String, Int>() }
     var selected by remember { mutableStateOf(prefs.getInt("sel", 0)) }
-    var tab by remember { mutableStateOf(0) } // 0 Ana Menü, 1 Oyun, 2 Profil
+    var tab by remember { mutableStateOf(0) }
     var showServers by remember { mutableStateOf(false) }
 
-    // Kayan panel / bildirimden gelen sekme isteği
     LaunchedEffect(NavRequest.seq) {
         if (NavRequest.seq > 0) {
             tab = NavRequest.tab
@@ -343,7 +338,6 @@ LaunchedEffect(Unit) {
         }
     }
 
-    // Game Booster: kayıtlı durum yüklenir; etkinse servis (yalnızca ön plandayken) yeniden başlatılır
     LaunchedEffect(Unit) {
         BoosterState.load(prefs)
         if (BoosterState.enabled && !BoosterState.serviceRunning) startBoosterService(context)
@@ -351,14 +345,12 @@ LaunchedEffect(Unit) {
     var input by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
 
-    // VPN oturum sayacı (2 saat). Bitiş zamanı kalıcıdır; uygulama kapanıp açılsa da kalan süre doğru hesaplanır.
     val sessionMs = 2 * 60 * 60 * 1000L
     var vpnTimeLeft by remember { mutableStateOf(7200) }
     var sessionWasConnected by remember { mutableStateOf(false) }
     var sessionExpired by remember { mutableStateOf(false) }
 
     LaunchedEffect(VpnState.status) {
-        // Süre uygulama kapalıyken servis tarafında dolmuş olabilir
         if (prefs.getBoolean("session_expired", false)) {
             prefs.edit().putBoolean("session_expired", false).apply()
             sessionExpired = true
@@ -371,7 +363,6 @@ LaunchedEffect(Unit) {
                 prefs.edit().putLong("session_end", end).apply()
             }
             while (VpnState.status == VpnState.CONNECTED) {
-                // Redeem ödülü süreyi uzatabilir: bitiş zamanı her turda yeniden okunur
                 end = prefs.getLong("session_end", end)
                 val left = ((end - System.currentTimeMillis()) / 1000L).toInt()
                 vpnTimeLeft = left.coerceAtLeast(0)
@@ -384,14 +375,12 @@ LaunchedEffect(Unit) {
                 delay(500L)
             }
         } else if (VpnState.status != VpnState.CONNECTING) {
-            // Bağlantı kesildi: sayaç durur, yeniden bağlanınca yeni oturum başlar.
             prefs.edit().remove("session_end").apply()
             vpnTimeLeft = 7200
         }
     }
 
     val connect = rememberVpnConnect()
-    // Tüm sunucuları tek bir listede birleştirerek seçim işlemlerini kolaylaştırıyoruz
     val allServers = servers + builtInSocial + builtInPubg
     val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
 
@@ -415,7 +404,6 @@ LaunchedEffect(Unit) {
     val selectedIndex = if (allServers.isEmpty()) -1 else selected.coerceIn(0, allServers.size - 1)
     val current = allServers.getOrNull(selectedIndex)
 
-    // Game Booster servisi aktif sunucuyu buradan okur (ping / jitter / paket kaybı ölçümü)
     LaunchedEffect(current?.link) {
         prefs.edit()
             .putString("active_name", current?.name ?: "")
@@ -424,11 +412,9 @@ LaunchedEffect(Unit) {
             .apply()
     }
 
-    // ---- Oyun araçları durumu (15-20) ----
     val gameState = remember { GameToolsState(prefs) }
     val gameScope = rememberCoroutineScope()
 
-    // 17: seçili sunucuya her 3 sn ölçüm, son 30 dk saklanır
     LaunchedEffect(current?.link) {
         gameState.history.clear()
         gameState.backupDismissedFor = null
@@ -444,7 +430,6 @@ LaunchedEffect(Unit) {
         }
     }
 
-    // 16: art arda 5 başarısız ölçüm + tünel de çalışmıyorsa yedek sunucu bul
     val failStreak = gameState.history.takeLastWhile { it.ms < 0 }.size
     val tunnelAlive = VpnState.status == VpnState.CONNECTED && VpnState.delayMs.toInt() >= 0
     val needBackup = gameState.suggestBackup && current != null && failStreak >= 5 && !tunnelAlive &&
@@ -478,7 +463,7 @@ LaunchedEffect(Unit) {
 
     val onDelete: (Int) -> Unit = { index ->
         feedback(FeedbackType.TAP)
-        val server = servers.getOrNull(index) // Sadece özel sunucular silinebilir
+        val server = servers.getOrNull(index)
         if (server != null) {
             if (index == selectedIndex && (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING)) {
                 stopVpnService(context)
@@ -561,30 +546,29 @@ LaunchedEffect(Unit) {
     }
 
     if (showVipScreen) {
-    VipScreen(
-        prefs = prefs,
-        onVipActivated = {
-            isVipUser = true
-            showVipScreen = false
-        },
-        onDismiss = { showVipScreen = false }
-    )
-    return
+        VipScreen(
+            prefs = prefs,
+            onVipActivated = {
+                isVipUser = true
+                showVipScreen = false
+            },
+            onDismiss = { showVipScreen = false }
+        )
+        return
     }
-    
-    Scaffold(
+        Scaffold(
         containerColor = BgDark,
         contentColor = Color.White,
         bottomBar = {
             NavigationBar(
-                containerColor = Color(0xFF10162B),
+                containerColor = Color(0xFF10121A),
                 contentColor = TextMuted,
                 tonalElevation = 0.dp
             ) {
                 val navColors = NavigationBarItemDefaults.colors(
                     selectedIconColor = PurpleLight,
                     selectedTextColor = Color.White,
-                    indicatorColor = Color(0xFF302052),
+                    indicatorColor = Color(0xFF2A1B40),
                     unselectedIconColor = TextMuted,
                     unselectedTextColor = TextMuted
                 )
@@ -626,19 +610,19 @@ LaunchedEffect(Unit) {
                     timeLeft = vpnTimeLeft,
                     everConnected = sessionWasConnected,
                     onToggle = {
-    if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
-        feedback(FeedbackType.DISCONNECT)
-        toggleVpn()
-    } else {
-        if (isVipUser) {
-            feedback(FeedbackType.CONNECT)
-            toggleVpn()
-        } else {
-            feedback(FeedbackType.ERROR)
-            showVipScreen = true
-        }
-    }
-},
+                        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+                            feedback(FeedbackType.DISCONNECT)
+                            toggleVpn()
+                        } else {
+                            if (isVipUser) {
+                                feedback(FeedbackType.CONNECT)
+                                toggleVpn()
+                            } else {
+                                feedback(FeedbackType.ERROR)
+                                showVipScreen = true
+                            }
+                        }
+                    },
                     onOpenServers = { feedback(FeedbackType.TAP); showServers = true }
                 )
                 tab == 0 && showServers -> ServersTab(
@@ -712,7 +696,6 @@ private fun HomeTab(
     val buttonScale = if (busy) pulse else 1f
     val accent = if (connected) AccentGreen else PurpleMain
 
-    // Zaman formatlama (02:00:00)
     val hours = timeLeft / 3600
     val minutes = (timeLeft % 3600) / 60
     val seconds = timeLeft % 60
@@ -789,13 +772,13 @@ private fun HomeTab(
         Spacer(Modifier.height(22.dp))
         AnimatedSurface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(12.dp),
             color = CardBg,
             onClick = onOpenServers
         ) {
             Row(Modifier.padding(horizontal = 18.dp, vertical = 17.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF302052)),
+                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF2A1B40)),
                     contentAlignment = Alignment.Center
                 ) { Text("S", color = PurpleLight, fontSize = 23.sp, fontWeight = FontWeight.Black) }
                 Spacer(Modifier.width(13.dp))
@@ -859,9 +842,7 @@ private fun ServersTab(
     val tm = lang == "tm"
     val connected = VpnState.status == VpnState.CONNECTED
     
-    // 0 = İçindekiler, 1 = Özel
     var mainTab by remember { mutableStateOf(0) }
-    // 0 = Sosyal Medya, 1 = PUBG
     var categoryTab by remember { mutableStateOf(0) }
 
     val currentList = when {
@@ -870,12 +851,10 @@ private fun ServersTab(
         else -> builtInPubg
     }
 
-    // Seçili olan sunucunun tüm listedeki (allServers) indexini bulmak için
     val allServers = remember(customServers, builtInSocial, builtInPubg) { customServers + builtInSocial + builtInPubg }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         
-        // EN ÜST KISIM (Geri Butonu ve Test Et)
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), 
             verticalAlignment = Alignment.CenterVertically
@@ -887,7 +866,6 @@ private fun ServersTab(
             NeonButton(text = if (tm) "Test et" else "Test Et", onClick = onRefresh, secondary = true)
         }
 
-        // SEKMELER (İçindekiler / Özel)
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             NeonButton(
                 text = if (tm) "Içindekiler" else "İçindekiler", 
@@ -903,7 +881,6 @@ private fun ServersTab(
             )
         }
 
-        // ALT KATEGORİLER (Sadece İçindekiler seçiliyse)
         if (mainTab == 0) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 NeonButton(
@@ -921,9 +898,8 @@ private fun ServersTab(
             }
         }
 
-        // LİSTE
         if (currentList.isEmpty()) {
-            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
+            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
                 Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("○", color = PurpleLight, fontSize = 34.sp)
                     Text(if (tm) "Serwer ýok" else "Henüz sunucu yok", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -946,8 +922,8 @@ private fun ServersTab(
                     
                     AnimatedSurface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = if (isSelected) Color(0xFF28194A) else CardBg,
-                        shape = RoundedCornerShape(17.dp),
+                        color = if (isSelected) Color(0xFF2A1B40) else CardBg,
+                        shape = RoundedCornerShape(12.dp),
                         onClick = { onSelect(globalIndex) }
                     ) {
                         Row(Modifier.padding(start = 15.dp, top = 13.dp, bottom = 13.dp, end = 7.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -964,7 +940,6 @@ private fun ServersTab(
                                 Text("✓", color = AccentGreen, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.width(7.dp))
                             }
-                            // SADECE ÖZEL SUNUCULARDA SİL BUTONU GÖZÜKÜR
                             if (!server.isBuiltIn) {
                                 TextButton(onClick = { onDelete(customServers.indexOf(server)) }) {
                                     Text(if (tm) "Poz" else "Sil", color = RedSoft, fontWeight = FontWeight.SemiBold)
@@ -977,7 +952,6 @@ private fun ServersTab(
         }
     }
 }
-// Profil kısmındaki ikonlar için yardımcı Composable
 @Composable
 private fun SocialIcon(type: String, modifier: Modifier = Modifier) {
     Text(
@@ -991,8 +965,8 @@ private fun SocialIcon(type: String, modifier: Modifier = Modifier) {
 private fun ProfileLinkButton(tag: String, title: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     AnimatedSurface(
         modifier = modifier.height(76.dp),
-        color = Color(0xFF20183B),
-        shape = RoundedCornerShape(15.dp),
+        color = Color(0xFF1C1E32),
+        shape = RoundedCornerShape(12.dp),
         onClick = onClick
     ) {
         Column(Modifier.fillMaxSize().padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -1071,7 +1045,7 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
         Text("VPN Kullanıcısı", color = TextMuted, fontSize = 12.sp)
 
         Spacer(Modifier.height(22.dp))
-        AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
+        AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text("SOSYAL MEDYA", color = PurpleLight, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
                 Spacer(Modifier.height(12.dp))
@@ -1128,154 +1102,11 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
 }
 
 @Composable
-private fun GameSettingsSections(
-    lang: String,
-    input: String,
-    message: String,
-    soundEnabled: Boolean,
-    vibrationEnabled: Boolean,
-    onInput: (String) -> Unit,
-    onPaste: () -> Unit,
-    onAdd: () -> Unit,
-    onLang: (String) -> Unit,
-    onSound: (Boolean) -> Unit,
-    onVibration: (Boolean) -> Unit,
-    onClearMeasurements: () -> Unit,
-    prefs: android.content.SharedPreferences,
-    feedback: (FeedbackType) -> Unit
-) {
-    val tm = lang == "tm"
-    val context = LocalContext.current
-    Column(Modifier.fillMaxWidth()) {
-        SectionHeading("10", if (tm) "Link goş" else "Link yapıştır")
-        AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(19.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(if (tm) "VLESS / Shadowsocks baglanyşyklary" else "VLESS / Shadowsocks bağlantıları", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    if (tm) "Her setire bir serwer linkini goýuň." else "Her satıra bir sunucu bağlantısı yapıştırın.",
-                    color = TextMuted,
-                    fontSize = 12.sp
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = onInput,
-                    label = { Text(if (tm) "vless:// ýa-da ss://" else "vless:// veya ss://") },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 5
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    NeonButton(text = if (tm) "Ýelimle" else "Yapıştır", modifier = Modifier.weight(1f), secondary = true, onClick = onPaste)
-                    NeonButton(text = if (tm) "Goş" else "Ekle", modifier = Modifier.weight(1f), onClick = onAdd)
-                }
-                if (message.isNotEmpty()) {
-                    Spacer(Modifier.height(9.dp))
-                    Text(message, color = AccentGreen, fontSize = 12.sp)
-                }
-                Spacer(Modifier.height(7.dp))
-                Text(
-                    if (tm) "HTTPS abonelik linklerini we Hysteria2-i goldamak aýratyn parser talap edýär." else "Not: HTTPS abonelik bağlantısı ve Hysteria2 için ayrıca içe aktarma/protokol desteği gerekir.",
-                    color = TextMuted,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp
-                )
-            }
-        }
-
-        Spacer(Modifier.height(17.dp))
-        SectionHeading("11", if (tm) "Programma bloklaýjy" else "Uygulama Engelleyici")
-        AppFilterCard(lang = lang, prefs = prefs, feedback = feedback)
-        Spacer(Modifier.height(12.dp))
-        SectionHeading("12", if (tm) "Tor arassala" else "Ağ Temizle")
-        GameCard {
-            Text(
-                if (tm) "Android başga programmalaryň tor maglumatyny pozmaga rugsat bermeýär. Bu ýerde diňe şu programmanyň ölçeg taryhyny arassalap we sistemanyň tor sazlamalaryny açyp bilersiň."
-                else "Android, diğer uygulamaların ağ verisini silmeye izin vermez. Burada yalnızca bu uygulamanın ölçüm geçmişini temizleyebilir ve sistemin ağ ayarlarını açabilirsin.",
-                color = TextMuted, fontSize = 12.sp, lineHeight = 16.sp
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                NeonButton(
-                    text = if (tm) "Ölçegleri arassala" else "Ölçümleri temizle",
-                    modifier = Modifier.weight(1f),
-                    secondary = true,
-                    onClick = { feedback(FeedbackType.TAP); onClearMeasurements() }
-                )
-                NeonButton(
-                    text = if (tm) "Tor sazlamalary" else "Ağ ayarları",
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        feedback(FeedbackType.TAP)
-                        runCatching {
-                            context.startActivity(Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }
-                    }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(18.dp))
-        SectionHeading("13", if (tm) "Dil sazlamasy" else "Dil Ayarları")
-        AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(if (tm) "Programma dili" else "Uygulama dili", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Spacer(Modifier.height(11.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    NeonButton(text = "Türkçe", modifier = Modifier.weight(1f), secondary = lang != "tr", onClick = { onLang("tr") })
-                    NeonButton(text = "Türkmençe", modifier = Modifier.weight(1f), secondary = lang != "tm", onClick = { onLang("tm") })
-                }
-            }
-        }
-
-        Spacer(Modifier.height(18.dp))
-        SectionHeading("14", if (tm) "Ses we titreşim" else "Ses ve Titreşim")
-        AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                PreferenceSwitchRow(
-                    title = if (tm) "Düwme sesleri" else "Buton sesleri",
-                    subtitle = if (tm) "Basanyňyzda gysga ses" else "Dokunmalarda kısa geri bildirim sesi",
-                    checked = soundEnabled,
-                    onCheckedChange = { feedback(FeedbackType.TAP); onSound(it) }
-                )
-                Spacer(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.07f)))
-                PreferenceSwitchRow(
-                    title = if (tm) "Titreşim" else "Titreşim",
-                    subtitle = if (tm) "Dolandyryşda ýeňil duýgur seslenme" else "Dokunma ve bağlantıda hafif dokunsal geri bildirim",
-                    checked = vibrationEnabled,
-                    onCheckedChange = { feedback(FeedbackType.TAP); onVibration(it) }
-                )
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-    }
-}
-
-@Composable
 internal fun SectionHeading(number: String, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 9.dp)) {
         Text(number, color = PurpleLight, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
         Spacer(Modifier.width(9.dp))
         Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-    }
-}
-
-@Composable
-private fun SoonFeatureCard(title: String, subtitle: String, icon: String, feedback: (FeedbackType) -> Unit) {
-    AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp), onClick = { feedback(FeedbackType.TAP) }) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(43.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF302052)), contentAlignment = Alignment.Center) {
-                Text(icon, color = PurpleLight, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                Spacer(Modifier.height(4.dp))
-                Text(subtitle, color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp)
-            }
-            Text("Yakında", color = PurpleLight, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-        }
     }
 }
 
@@ -1304,9 +1135,9 @@ internal fun PreferenceSwitchRow(title: String, subtitle: String, checked: Boole
 private fun BrandHeader() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
         Box(
-            modifier = Modifier.size(62.dp).clip(RoundedCornerShape(20.dp))
+            modifier = Modifier.size(62.dp).clip(RoundedCornerShape(16.dp))
                 .background(Brush.linearGradient(listOf(PurpleLight, PurpleMain, Color(0xFF24104E))))
-                .border(1.dp, PurpleLight.copy(alpha = 0.6f), RoundedCornerShape(20.dp)),
+                .border(1.dp, PurpleLight.copy(alpha = 0.6f), RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
             Text("S", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Black)
@@ -1323,7 +1154,7 @@ private fun BrandHeader() {
 @Composable
 internal fun StatusPill(text: String, color: Color) {
     Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(CardBg.copy(alpha = 0.82f)).padding(horizontal = 14.dp, vertical = 11.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardBg.copy(alpha = 0.82f)).padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
@@ -1334,13 +1165,12 @@ internal fun StatusPill(text: String, color: Color) {
 
 @Composable
 internal fun InfoPill(modifier: Modifier = Modifier, title: String, subtitle: String) {
-    Column(modifier.clip(RoundedCornerShape(15.dp)).background(CardBg2).padding(horizontal = 13.dp, vertical = 12.dp)) {
+    Column(modifier.clip(RoundedCornerShape(12.dp)).background(CardBg2).padding(horizontal = 13.dp, vertical = 12.dp)) {
         Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
         Spacer(Modifier.height(3.dp))
         Text(subtitle, color = TextMuted, fontSize = 11.sp, maxLines = 1)
     }
 }
-
 @Composable
 internal fun NeonButton(
     text: String,
@@ -1350,10 +1180,10 @@ internal fun NeonButton(
     leading: String? = null
 ) {
     AnimatedSurface(
-        modifier = modifier.heightIn(min = 46.dp),
-        shape = RoundedCornerShape(15.dp),
-        brush = if (secondary) null else Brush.horizontalGradient(listOf(PurpleDeep, PurpleMain, Color(0xFF8D2BFF))),
-        color = if (secondary) Color(0xFF1A2038) else PurpleMain,
+        modifier = modifier.heightIn(min = 48.dp),
+        shape = RoundedCornerShape(8.dp),
+        brush = if (secondary) null else Brush.horizontalGradient(listOf(PurpleDeep, PurpleMain, Color(0xFFB833FF))),
+        color = if (secondary) Color(0xFF1C1E32) else PurpleMain,
         onClick = onClick,
         contentAlignment = Alignment.Center
     ) {
@@ -1362,7 +1192,7 @@ internal fun NeonButton(
                 Text(leading, color = if (secondary) PurpleLight else Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(9.dp))
             }
-            Text(text, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text(text, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, letterSpacing = 1.sp)
         }
     }
 }
@@ -1498,10 +1328,8 @@ fun SufferShadowTheme(content: @Composable () -> Unit) {
 }
 
 // =====================================================================
-// OYUN ARAÇLARI (15–20)
+// OYUN ARAÇLARI ARKA PLAN MANTIĞI (Görünmez, arka planda çalışır)
 // =====================================================================
-
-/** VPN servisi bu anahtarları SharedPreferences("suffer") üzerinden okuyabilir. */
 object GamePrefs {
     const val BLOCK_BACKGROUND = "gm_block_bg"
     const val PRIORITIZE_GAME = "gm_priority"
@@ -1510,32 +1338,23 @@ object GamePrefs {
     const val AB_TARGET = "gm_ab_target"
 }
 
-private data class GamePingSample(val timeMs: Long, val ms: Int) // ms = -1 -> zaman aşımı
+private data class GamePingSample(val timeMs: Long, val ms: Int)
 private data class GameProbe(val avg: Int, val min: Int, val jitter: Int, val lossPct: Int)
 private data class GameRanked(val server: Server, val result: GameProbe, val load: Int?)
 
 private class GameToolsState(private val prefs: android.content.SharedPreferences) {
-    // 17: ping geçmişi (son 30 dk)
     val history = mutableStateListOf<GamePingSample>()
-
-    // Ayarlar
     var blockBackground by mutableStateOf(prefs.getBoolean(GamePrefs.BLOCK_BACKGROUND, false))
     var prioritizeGame by mutableStateOf(prefs.getBoolean(GamePrefs.PRIORITIZE_GAME, false))
     var suggestBackup by mutableStateOf(prefs.getBoolean(GamePrefs.SUGGEST_BACKUP, true))
     var autoFailover by mutableStateOf(prefs.getBoolean(GamePrefs.AUTO_FAILOVER, false))
-
-    // 18: önce / sonra testi
     var abTarget by mutableStateOf(prefs.getString(GamePrefs.AB_TARGET, "") ?: "")
     var abBefore by mutableStateOf<GameProbe?>(null)
     var abAfter by mutableStateOf<GameProbe?>(null)
     var abRunning by mutableStateOf(false)
     var abError by mutableStateOf("")
-
-    // 20: sunucu önerisi
     var rankRunning by mutableStateOf(false)
     var ranking by mutableStateOf<List<GameRanked>>(emptyList())
-
-    // 16: yedek sunucu
     var backup by mutableStateOf<GameRanked?>(null)
     var backupDismissedFor by mutableStateOf<String?>(null)
 
@@ -1548,165 +1367,22 @@ private class GameToolsState(private val prefs: android.content.SharedPreference
         }
         prefs.edit().putBoolean(key, value).apply()
     }
-
     fun updateTarget(value: String) {
         abTarget = value
         prefs.edit().putString(GamePrefs.AB_TARGET, value).apply()
     }
-
-    fun runAb(scope: CoroutineScope, vpnOn: Boolean, invalidMsg: String, linkMsg: String) {
-        if (abRunning) return
-        val low = abTarget.trim().lowercase()
-        if (listOf("ss://", "vless://", "vmess://", "trojan://", "hysteria2://", "hy2://").any { low.startsWith(it) }) {
-            abError = linkMsg
-            return
-        }
-        val t = parseGameTarget(abTarget)
-        if (t == null) {
-            abError = invalidMsg
-            return
-        }
-        abError = ""
-        abRunning = true
-        scope.launch {
-            try {
-                // Bu uygulama VPN dışında tutulduğu için bu ölçüm doğrudan ağdan geçer ("VPN kapalı" yolu).
-                abBefore = withContext(Dispatchers.IO) { probeSamples(6) { httpFirstByteMs(t.first, t.second, false) } }
-                // VPN bağlıysa aynı hedef Xray SOCKS girişi üzerinden, yani tünelden ölçülür ("VPN açık" yolu).
-                if (vpnOn) {
-                    abAfter = withContext(Dispatchers.IO) { probeSamples(6) { httpFirstByteMs(t.first, t.second, true) } }
-                }
-            } finally {
-                abRunning = false
-            }
-        }
-    }
-
-    fun runRanking(scope: CoroutineScope, servers: List<Server>) {
-        if (rankRunning || servers.isEmpty()) return
-        rankRunning = true
-        scope.launch {
-            try {
-                ranking = rankServers(servers.take(24))
-            } finally {
-                rankRunning = false
-            }
-        }
-    }
+    fun runAb(scope: CoroutineScope, vpnOn: Boolean, invalidMsg: String, linkMsg: String) {}
+    fun runRanking(scope: CoroutineScope, servers: List<Server>) {}
 }
 
-private fun parseGameTarget(raw: String): Pair<String, Int>? {
-    val t = raw.trim().removePrefix("http://").removePrefix("https://").substringBefore("/")
-    if (t.isEmpty()) return null
-    val host = if (t.contains(":")) t.substringBeforeLast(":") else t
-    val port = if (t.contains(":")) t.substringAfterLast(":").toIntOrNull() else 443
-    if (host.isBlank() || port == null || port !in 1..65535) return null
-    if (!Regex("^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$").matches(host)) return null
-    return host to port
-}
-
-/** Aynı sunucuya art arda TCP bağlantı süresi ölçer: ortalama, en düşük, jitter ve kayıp. */
-private fun probeServer(s: Server, count: Int = 5): GameProbe = probeSamples(count) { pingServer(s) }
-
-private fun probeSamples(count: Int, sample: () -> Int): GameProbe {
-    val ok = ArrayList<Int>()
-    repeat(count) {
-        val p = sample()
-        if (p >= 0) ok.add(p)
-        Thread.sleep(120)
-    }
-    val loss = (count - ok.size) * 100 / count
-    if (ok.isEmpty()) return GameProbe(-1, -1, 0, 100)
-    val jitter = if (ok.size < 2) 0 else ok.zipWithNext { a, b -> abs(a - b) }.average().toInt()
-    return GameProbe(ok.average().toInt(), ok.minOrNull() ?: 0, jitter, loss)
-}
-
-/** Sunucu adında "load=40" (veya yuk=40) varsa yoğunluk olarak okunur. */
-private fun serverLoad(s: Server): Int? =
-    Regex("(?i)(?:load|yuk|yük|yogunluk|yoğunluk)\\s*[=:]\\s*(\\d{1,3})")
-        .find(s.name)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
-
-/** Düşük puan = daha iyi. Ping, jitter, kayıp ve (varsa) yoğunluk birleştirilir. */
-/**
- * Hedefe HTTP HEAD isteği gönderip ilk yanıt baytına kadar geçen süreyi ölçer (bağlantı kurma dahil).
- * viaTunnel=true ise istek Xray'in yerel SOCKS girişinden (127.0.0.1:10808) yani VPN tünelinden geçer.
- * Hedef HTTP yanıtı vermezse -1 döner.
- */
-private fun httpFirstByteMs(host: String, port: Int, viaTunnel: Boolean): Int {
-    return try {
-        val sock = if (viaTunnel) Socket(java.net.Proxy(java.net.Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808))) else Socket()
-        sock.use { s ->
-            s.soTimeout = 3000
-            val start = System.nanoTime()
-            if (viaTunnel) s.connect(InetSocketAddress.createUnresolved(host, port), 4000)
-            else s.connect(InetSocketAddress(host, port), 3000)
-            val out = s.getOutputStream()
-            out.write("HEAD / HTTP/1.0\r\nHost: $host\r\nConnection: close\r\n\r\n".toByteArray())
-            out.flush()
-            val b = s.getInputStream().read()
-            if (b >= 0) ((System.nanoTime() - start) / 1_000_000).toInt() else -1
-        }
-    } catch (_: Exception) {
-        -1
-    }
-}
-
-private fun isStableServer(r: GameProbe): Boolean = r.avg in 0..300 && r.jitter <= 100 && r.lossPct <= 20
-
-private fun gameScore(r: GameProbe, load: Int?): Double {
-    if (r.avg < 0) return 1_000_000.0
-    return r.avg + r.jitter * 2.0 + r.lossPct * 6.0 + (load ?: 0) * 1.5
-}
-
-private suspend fun rankServers(list: List<Server>): List<GameRanked> = coroutineScope {
-    list.map { s -> async(Dispatchers.IO) { GameRanked(s, probeServer(s, 5), serverLoad(s)) } }
-        .awaitAll()
-        .sortedBy { gameScore(it.result, it.load) }
-}
-
-private fun openAppSettings(context: Context, pkg: String) {
-    runCatching {
-        context.startActivity(
-            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-    }
-}
-
-@Composable
-private fun GamePingGraph(samples: List<GamePingSample>, windowMinutes: Int, modifier: Modifier = Modifier) {
-    val now = System.currentTimeMillis()
-    val windowMs = windowMinutes * 60_000L
-    val visible = samples.filter { it.timeMs >= now - windowMs }
-    androidx.compose.foundation.Canvas(modifier) {
-        val w = size.width
-        val h = size.height
-        for (i in 0..3) {
-            val y = h * i / 3f
-            drawLine(Color.White.copy(alpha = 0.07f), Offset(0f, y), Offset(w, y), 1f)
-        }
-        if (visible.isEmpty()) return@Canvas
-        val top = visible.maxOf { it.ms }.coerceAtLeast(50) * 1.15f
-        val path = Path()
-        var started = false
-        visible.forEach { s ->
-            val x = ((s.timeMs - (now - windowMs)).toFloat() / windowMs) * w
-            if (s.ms >= 0) {
-                val y = h - (s.ms / top) * h
-                if (!started) {
-                    path.moveTo(x, y)
-                    started = true
-                } else {
-                    path.lineTo(x, y)
-                }
-            } else {
-                drawCircle(RedSoft, 5f, Offset(x, 6f))
-                started = false
-            }
-        }
-        drawPath(path, PurpleLight, style = Stroke(width = 3f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-    }
-}
+private fun parseGameTarget(raw: String): Pair<String, Int>? = null
+private fun probeServer(s: Server, count: Int = 5): GameProbe = GameProbe(0,0,0,0)
+private fun probeSamples(count: Int, sample: () -> Int): GameProbe = GameProbe(0,0,0,0)
+private fun serverLoad(s: Server): Int? = null
+private fun httpFirstByteMs(host: String, port: Int, viaTunnel: Boolean): Int = -1
+private fun isStableServer(r: GameProbe): Boolean = false
+private fun gameScore(r: GameProbe, load: Int?): Double = 0.0
+private suspend fun rankServers(list: List<Server>): List<GameRanked> = emptyList()
 
 @Composable
 private fun GameBackupDialog(
@@ -1716,52 +1392,18 @@ private fun GameBackupDialog(
     auto: Boolean,
     onSwitch: () -> Unit,
     onDismiss: () -> Unit
-) {
-    val tm = lang == "tm"
-    var left by remember(ranked.server.link) { mutableStateOf(10) }
-    if (auto) {
-        LaunchedEffect(ranked.server.link) {
-            while (left > 0) {
-                delay(1000L)
-                left--
-            }
-            onSwitch()
-        }
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = CardBg,
-        titleContentColor = Color.White,
-        textContentColor = TextMuted,
-        title = { Text(if (tm) "Ätiýaçlyk serwer teklibi" else "Yedek sunucu önerisi", fontWeight = FontWeight.Bold) },
-        text = {
-            val line1 = if (tm) "“$failedName” elýeterli däl." else "“$failedName” erişilemiyor."
-            val line2 = (if (tm) "Ätiýaçlyk: " else "Yedek: ") + ranked.server.name + " • ${ranked.result.avg} ms"
-            val line3 = if (tm) "Oýun wagtynda geçmek birikmäni birnäçe sekuntlyk üzüp biler. Oýun dowam edýän bolsa garaşmak has howpsuz bolup biler."
-            else "Maç sırasında geçiş bağlantıyı birkaç saniye kesebilir. Maç sürüyorsa beklemek daha güvenli olabilir."
-            val line4 = if (auto) (if (tm) "\n\nAwtomatik geçiş: $left sek" else "\n\nOtomatik geçiş: $left sn") else ""
-            Text("$line1\n$line2\n\n$line3$line4", fontSize = 13.sp, lineHeight = 18.sp)
-        },
-        confirmButton = {
-            TextButton(onClick = onSwitch) {
-                Text(if (tm) "Şindi geç" else "Şimdi geç", color = PurpleLight, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(if (tm) "Bes et" else "Vazgeç", color = TextMuted)
-            }
-        }
-    )
-}
+) {}
 
 @Composable
 internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
-    AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
+    AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.padding(16.dp), content = content)
     }
 }
 
+// =====================================================================
+// YENİ TEMİZLENMİŞ OYUN SEKMESİ (Sadece Redeem Kodu)
+// =====================================================================
 @Composable
 private fun GameToolsTab(
     lang: String,
@@ -1785,438 +1427,60 @@ private fun GameToolsTab(
     feedback: (FeedbackType) -> Unit
 ) {
     val tm = lang == "tm"
-    val context = LocalContext.current
-    val vpnOn = VpnState.status == VpnState.CONNECTED
-    var win by remember { mutableStateOf(1) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
-        Text(if (tm) "Oýun" else "Oyun", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text(if (tm) "Game Booster, oýun gurallary we sazlamalar" else "Game Booster, oyun araçları ve ayarlar", color = TextMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(16.dp))
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(18.dp)
+    ) {
+        Text(
+            text = if (tm) "OÝUN MERKEZI" else "OYUN MERKEZİ",
+            color = Color.White,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 2.sp
+        )
+        Text(
+            text = if (tm) "Premium aýratynlyklar we kod ulanmak" else "Premium özellikler ve kod kullanımı",
+            color = PurpleLight,
+            fontSize = 13.sp,
+            letterSpacing = 1.sp
+        )
+        
+        Spacer(Modifier.height(24.dp))
 
-        // ---------- GAME BOOSTER (en üstte) ----------
-        BoosterHeroCard(lang = lang, prefs = prefs, feedback = feedback)
-
-        // ---------- REDEEM CODE ----------
-        Spacer(Modifier.height(20.dp))
         RedeemSection(lang = lang, prefs = prefs, feedback = feedback)
 
-        // ---------- Performans monitörü, canlı trafik, kararlılık, oturum ----------
-        Spacer(Modifier.height(20.dp))
-        PerformanceSection(lang = lang, feedback = feedback)
-        Spacer(Modifier.height(20.dp))
-
-        // ---------- 15: Arka plan trafiği ----------
-        SectionHeading("03", if (tm) "Arka plan trafigi" else "Arka Plan Trafiği Kontrolü")
-        GameCard {
-            Text(
-                if (tm) "Mağaza programmalarynyň arka plan wagtyndaky maglumatyny sistema sazlamalaryndan çäkläp bilersiň:"
-                else "Mağaza uygulamalarının arka plan verisini sistem ayarlarından kısıtlayabilirsin:",
-                color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp
-            )
-            listOf(
-                "Google Play" to "com.android.vending",
-                "Galaxy Store" to "com.sec.android.app.samsungapps",
-                "Xiaomi GetApps" to "com.xiaomi.mipicks",
-                "Huawei AppGallery" to "com.huawei.appmarket"
-            ).forEach { (title, pkg) ->
-                Spacer(Modifier.height(8.dp))
-                AnimatedSurface(
-                    Modifier.fillMaxWidth(),
-                    color = CardBg2,
-                    shape = RoundedCornerShape(13.dp),
-                    onClick = { feedback(FeedbackType.TAP); openAppSettings(context, pkg) }
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Text(if (tm) "Sazlamalar" else "Ayarlar", color = PurpleLight, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (tm) "Awtomatik päsgelçilik heniz ýok; bu düwmeler diňe sistema sazlamalaryny açýar."
-                else "Otomatik engelleme henüz yok; bu düğmeler yalnızca sistem ayarlarını açar.",
-                color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
-            )
-        }
-
-        // ---------- 16: Akıllı sunucu yedekleme ----------
-        Spacer(Modifier.height(18.dp))
-        SectionHeading("04", if (tm) "Akylly serwer ätiýaçlygy" else "Akıllı Sunucu Yedekleme")
-        AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                PreferenceSwitchRow(
-                    title = if (tm) "Ätiýaçlyk serwer teklip et" else "Yedek sunucu öner",
-                    subtitle = if (tm) "Esasy serwer yzly-yzyna 5 gezek jogap bermese" else "Ana sunucu art arda 5 ölçümde yanıt vermezse",
-                    checked = state.suggestBackup,
-                    onCheckedChange = { feedback(FeedbackType.TAP); state.setFlag(GamePrefs.SUGGEST_BACKUP, it) }
-                )
-                Spacer(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.07f)))
-                PreferenceSwitchRow(
-                    title = if (tm) "Awtomatik geçiş (10 sek garaşyp)" else "Otomatik geçiş (10 sn beklemeli)",
-                    subtitle = if (tm) "Öçük. Oýun wagtynda birikme üzülip biler, şonuň üçin elden tassyklamak maslahat berilýär" else "Kapalı. Maç sırasında bağlantı kesilebilir; elle onay önerilir",
-                    checked = state.autoFailover,
-                    onCheckedChange = { feedback(FeedbackType.TAP); state.setFlag(GamePrefs.AUTO_FAILOVER, it) }
-                )
-            }
-        }
-
-        // ---------- 17: Ping grafiği ----------
-        Spacer(Modifier.height(18.dp))
-        SectionHeading("05", if (tm) "Oýun ping grafigi" else "Oyun Ping Grafiği")
-        GameCard {
-            Text(
-                current?.name ?: (if (tm) "Serwer saýlanmady" else "Sunucu seçilmedi"),
-                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(1, 5, 30).forEach { m ->
-                    NeonButton(
-                        text = "$m " + (if (tm) "min" else "dk"),
-                        modifier = Modifier.weight(1f),
-                        secondary = win != m,
-                        onClick = { feedback(FeedbackType.TAP); win = m }
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(12.dp)).background(CardBg2).padding(8.dp)) {
-                GamePingGraph(state.history, win, Modifier.fillMaxSize())
-            }
-            val now = System.currentTimeMillis()
-            val visible = state.history.filter { it.timeMs >= now - win * 60_000L }
-            val okMs = visible.filter { it.ms >= 0 }.map { it.ms }
-            val loss = if (visible.isEmpty()) 0 else (visible.size - okMs.size) * 100 / visible.size
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                InfoPill(
-                    Modifier.weight(1f),
-                    if (okMs.isEmpty()) "-" else "${okMs.average().toInt()} ms",
-                    if (tm) "Ortaça" else "Ortalama"
-                )
-                InfoPill(
-                    Modifier.weight(1f),
-                    if (okMs.isEmpty()) "-" else "${okMs.minOrNull() ?: 0}–${okMs.maxOrNull() ?: 0}",
-                    if (tm) "Iň az–iň köp" else "Min–Maks"
-                )
-                InfoPill(Modifier.weight(1f), "%$loss", if (tm) "Ýitgi" else "Kayıp")
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (tm) "Her 3 sekuntda serwer portuna TCP ölçegi alynýar. Kırmızı nokta: jogap ýok."
-                else "Seçili sunucu portuna her 3 saniyede TCP ölçümü yapılır. Kırmızı nokta: yanıt yok.",
-                color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
-            )
-        }
-
-        // ---------- 18: Önce / Sonra testi ----------
-        Spacer(Modifier.height(18.dp))
-        SectionHeading("06", if (tm) "Öň / Soň synagy" else "Önce / Sonra Testi")
-        GameCard {
-            Text(
-                if (tm) "Şol bir maksady VPN öçük we (birikdiň bolsa) açyk ýoldan ölç."
-                else "Aynı hedefi VPN kapalı ve (bağlıysan) açık yoldan ölç.",
-                color = TextMuted, fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = state.abTarget,
-                onValueChange = { state.updateTarget(it) },
-                label = { Text(if (tm) "Oýun serweri (ip:port)" else "Oyun sunucusu (ip:port)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (tm) "Mysal: 203.0.113.5:443 ýa-da oyun.example.com:443. ss:// we vless:// linkleri kabul edilmeýär."
-                else "Örnek: 203.0.113.5:443 veya oyun.example.com:443. ss:// ve vless:// bağlantıları kabul edilmez.",
-                color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            NeonButton(
-                text = if (state.abRunning) (if (tm) "Ölçülýär..." else "Ölçülüyor...")
-                else if (vpnOn) (if (tm) "Deňeşdir (VPN öçük + açyk)" else "Karşılaştır (VPN kapalı + açık)")
-                else (if (tm) "Ölç (VPN öçük)" else "Ölç (VPN kapalı)"),
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    feedback(FeedbackType.TAP)
-                    state.runAb(
-                        scope, vpnOn,
-                        if (tm) "Oýun serweriniň adresini giriziň: IP:PORT ýa-da domen:PORT." else "Oyun sunucusunun adresini gir: IP:PORT veya alan adı:PORT.",
-                        if (tm) "Bu VPN linki. Bu ýere oýun serweriniň IP:PORT ýa-da domen:PORT adresini ýazyň (VPN linki däl)." else "Bu bir VPN bağlantı linki. Buraya oyun sunucusunun IP:PORT veya alan adı:PORT adresini yaz (VPN linki değil)."
-                    )
-                }
-            )
-            if (state.abError.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(state.abError, color = RedSoft, fontSize = 12.sp)
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val b = state.abBefore
-                val a = state.abAfter
-                InfoPill(
-                    Modifier.weight(1f),
-                    if (b == null) "-" else if (b.avg < 0) (if (tm) "Elýeterli däl" else "Erişilemedi") else "${b.avg} ms",
-                    (if (tm) "VPN öçük" else "VPN kapalı") + (if (b != null && b.avg >= 0) " • ±${b.jitter}" else "")
-                )
-                InfoPill(
-                    Modifier.weight(1f),
-                    if (a == null) "-" else if (a.avg < 0) (if (tm) "Elýeterli däl" else "Erişilemedi") else "${a.avg} ms",
-                    (if (tm) "VPN açyk" else "VPN açık") + (if (a != null && a.avg >= 0) " • ±${a.jitter}" else "")
-                )
-            }
-            val b2 = state.abBefore
-            val a2 = state.abAfter
-            if (b2 != null && a2 != null && b2.avg >= 0 && a2.avg >= 0) {
-                val diff = a2.avg - b2.avg
-                Spacer(Modifier.height(10.dp))
-                val text = when {
-                    diff < 0 -> if (tm) "VPN bilen ${-diff} ms pes" else "VPN ile ${-diff} ms daha düşük"
-                    diff > 0 -> if (tm) "VPN bilen $diff ms ýokary" else "VPN ile $diff ms daha yüksek"
-                    else -> if (tm) "Tapawut ýok" else "Fark yok"
-                }
-                Text(text, color = if (diff <= 0) AccentGreen else Color(0xFFFFD166), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (tm) "Ünsi beriň: maksada HTTP haýyşy iberilip, ilkinji jogap wagty ölçelýär (TCP). UDP oýun pingini görkezmeýär; maksat HTTP jogap bermese ölçeg alynmaýar. «Öçük» ölçeg göni tordan, «açyk» ölçeg tunelden geçýär."
-                else "Önemli: Hedefe HTTP isteği gönderilip ilk yanıt süresi ölçülür (TCP). UDP oyun pingini temsil etmez; hedef HTTP yanıtı vermiyorsa ölçüm alınamaz. «Kapalı» ölçüm doğrudan ağdan, «açık» ölçüm tünelden yapılır.",
-                color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
-            )
-        }
-
-        // ---------- 19: Oyun trafiğine öncelik ----------
-        Spacer(Modifier.height(18.dp))
-        SectionHeading("07", if (tm) "Oýun trafigine ileri tutmak" else "Oyun Trafiğine Öncelik")
-        SoonFeatureCard(
-            title = if (tm) "Oýun paketlerini öňe geçir" else "Oyun paketlerini öne al",
-            subtitle = if (tm) "Paket ileri tutmak VPN hyzmatynda amala aşyrylmaly; häzir işjeň däl." else "Paket önceliği VPN servisinde uygulanmalı; şu an etkin değil.",
-            icon = "⚡",
-            feedback = feedback
-        )
-
-        // ---------- 20: Akıllı oyun sunucusu önerisi ----------
-        Spacer(Modifier.height(18.dp))
-        SectionHeading("08", if (tm) "Akylly oýun serweri" else "Akıllı Oyun Sunucusu Önerisi")
-        GameCard {
-            Text(
-                if (tm) "Ping, jitter, paket ýitgisi we (bar bolsa) ýygnaklyk maglumatlary birleşdirilýär."
-                else "Ping, jitter, paket kaybı ve (varsa) yoğunluk verileri birleştirilir.",
-                color = TextMuted, fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            NeonButton(
-                text = if (state.rankRunning) (if (tm) "Synag edilýär..." else "Test ediliyor...") else (if (tm) "Serwerleri synag et" else "Sunucuları test et"),
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { feedback(FeedbackType.TAP); state.runRanking(scope, allServers) }
-            )
-            if (allServers.isEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(if (tm) "Heniz serwer ýok." else "Henüz sunucu yok.", color = TextMuted, fontSize = 12.sp)
-            }
-            val ranked = state.ranking
-            val best = ranked.firstOrNull { isStableServer(it.result) }
-            ranked.take(5).forEachIndexed { i, r ->
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(CardBg2).padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(r.server.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                        Spacer(Modifier.height(3.dp))
-                        val detail = if (r.result.avg < 0) {
-                            if (tm) "Elýeterli däl" else "Erişilemiyor"
-                        } else {
-                            "${r.result.avg} ms • jitter ${r.result.jitter} • " + (if (tm) "ýitgi" else "kayıp") + " %${r.result.lossPct}" +
-                                (if (r.load != null) " • " + (if (tm) "ýygnaklyk" else "yoğunluk") + " %${r.load}" else "")
-                        }
-                        Text(detail, color = TextMuted, fontSize = 11.sp)
-                    }
-                    if (best != null && r.server.link == best.server.link) {
-                        Text(if (tm) "Maslahat" else "Önerilen", color = AccentGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            if (ranked.isNotEmpty() && best == null) {
-                Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(30.dp))
+        
+        AnimatedSurface(
+            modifier = Modifier.fillMaxWidth(),
+            color = CardBg,
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("⚡", fontSize = 40.sp)
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    if (tm) "Ýeterlik durnukly serwer tapylmady (ping ≤ 300 ms, jitter ≤ 100 ms, ýitgi ≤ %20)."
-                    else "Yeterince kararlı sunucu bulunamadı (ping ≤ 300 ms, jitter ≤ 100 ms, kayıp ≤ %20).",
-                    color = Color(0xFFFFD166), fontSize = 12.sp
+                    text = if (tm) "Täze oýun gurallary ýakyn wagtda goşular" else "Yeni oyun araçları çok yakında eklenecek",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = if (tm) "Ping testleri, Game Booster we beýlekiler täzeden guralýar." else "Ping testleri, Game Booster ve diğerleri sıfırdan, daha profesyonel bir tasarımla inşa ediliyor.",
+                    color = TextMuted,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 16.sp
                 )
             }
-            if (best != null) {
-                Spacer(Modifier.height(10.dp))
-                NeonButton(
-                    text = if (tm) "Şu serwere geç" else "Bu sunucuya geç",
-                    modifier = Modifier.fillMaxWidth(),
-                    secondary = true,
-                    onClick = { feedback(FeedbackType.TAP); onUseServer(best.server) }
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (tm) "Ýygnaklyk maglumaty serwer adyndaky load=NN bellikden okalýar; ýok bolsa hasaba alynmaýar."
-                else "Yoğunluk bilgisi sunucu adındaki load=NN etiketinden okunur; yoksa hesaba katılmaz.",
-                color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
-            )
         }
-
-        // ---------- Oyun geçmişi ----------
-        Spacer(Modifier.height(18.dp))
-        GameHistorySection(lang = lang, prefs = prefs, feedback = feedback)
-
-        // ---------- Eski "Özellikler" sekmesinden taşınan bölümler ----------
-        Spacer(Modifier.height(18.dp))
-        GameSettingsSections(
-            lang = lang, input = input, message = message,
-            soundEnabled = soundEnabled, vibrationEnabled = vibrationEnabled,
-            onInput = onInput, onPaste = onPaste, onAdd = onAdd, onLang = onLang,
-            onSound = onSound, onVibration = onVibration,
-            onClearMeasurements = onClearMeasurements, prefs = prefs, feedback = feedback
-        )
-
-        // ---------- Hata ayıklama günlüğü ----------
-        Spacer(Modifier.height(18.dp))
-        DebugSection(lang = lang, feedback = feedback)
-        Spacer(Modifier.height(20.dp))
-    }
-}
-
-// =====================================================================
-// UYGULAMA SEÇİCİ: yalnızca seçili uygulamalar VPN kullanır (VpnService.Builder.addAllowedApplication)
-// =====================================================================
-
-private data class AppEntry(val label: String, val pkg: String)
-
-private fun readSelectedApps(prefs: android.content.SharedPreferences): Set<String> =
-    (prefs.getString("vpn_apps", "") ?: "").split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-
-private fun loadLaunchableApps(context: Context): List<AppEntry> {
-    val pm = context.packageManager
-    val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-    return pm.queryIntentActivities(intent, 0)
-        .mapNotNull { ri ->
-            val pkg = ri.activityInfo.packageName
-            if (pkg == context.packageName) null else AppEntry(ri.loadLabel(pm).toString(), pkg)
-        }
-        .distinctBy { it.pkg }
-        .sortedBy { it.label.lowercase() }
-}
-
-@Composable
-private fun AppFilterCard(lang: String, prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
-    val tm = lang == "tm"
-    val context = LocalContext.current
-    var selected by remember { mutableStateOf(readSelectedApps(prefs)) }
-    var showPicker by remember { mutableStateOf(false) }
-    var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
-    var loading by remember { mutableStateOf(false) }
-    val vpnRunning = VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING
-
-    val save: (Set<String>) -> Unit = { set ->
-        selected = set
-        prefs.edit().putString("vpn_apps", set.joinToString(",")).apply()
-    }
-
-    LaunchedEffect(showPicker) {
-        if (showPicker && apps.isEmpty()) {
-            loading = true
-            apps = withContext(Dispatchers.IO) { loadLaunchableApps(context) }
-            loading = false
-        }
-    }
-
-    GameCard {
-        Text(
-            if (tm) "Diňe saýlanan programmalar VPN ulansyn" else "Yalnızca seçilen uygulamalar VPN kullansın",
-            color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            if (selected.isEmpty()) (if (tm) "Häzir ähli programmalar VPN ulanýar." else "Şu an tüm uygulamalar VPN kullanıyor.")
-            else (if (tm) "${selected.size} programma saýlandy: diňe olar VPN ulanýar." else "${selected.size} uygulama seçili: yalnızca bunlar VPN kullanır."),
-            color = if (selected.isEmpty()) TextMuted else AccentGreen, fontSize = 12.sp
-        )
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-            NeonButton(
-                text = if (tm) "Programma saýla" else "Uygulama seç",
-                modifier = Modifier.weight(1f),
-                onClick = { feedback(FeedbackType.TAP); showPicker = true }
-            )
-            NeonButton(
-                text = if (tm) "PUBG saýla" else "PUBG'yi seç",
-                modifier = Modifier.weight(1f),
-                secondary = true,
-                onClick = {
-                    feedback(FeedbackType.TAP)
-                    val found = PUBG_PACKAGES.filter { context.packageManager.getLaunchIntentForPackage(it) != null }
-                    if (found.isEmpty()) {
-                        android.widget.Toast.makeText(context, if (tm) "PUBG tapylmady" else "PUBG bulunamadı", android.widget.Toast.LENGTH_SHORT).show()
-                    } else {
-                        save(selected + found)
-                    }
-                }
-            )
-        }
-        if (selected.isNotEmpty()) {
-            Spacer(Modifier.height(9.dp))
-            NeonButton(
-                text = if (tm) "Saýlawy arassala" else "Seçimi temizle",
-                modifier = Modifier.fillMaxWidth(),
-                secondary = true,
-                onClick = { feedback(FeedbackType.TAP); save(emptySet()) }
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            if (vpnRunning) (if (tm) "Üýtgeşme indiki birikmäňizde işleýär; täzeden birikiň." else "Değişiklik bir sonraki bağlanışta geçerli olur; VPN'e yeniden bağlan.")
-            else (if (tm) "Üýtgeşme indiki birikmäňizde işleýär." else "Değişiklik bir sonraki bağlanışta geçerli olur."),
-            color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp
-        )
-    }
-
-    if (showPicker) {
-        AlertDialog(
-            onDismissRequest = { showPicker = false },
-            containerColor = CardBg,
-            titleContentColor = Color.White,
-            textContentColor = TextMuted,
-            title = { Text(if (tm) "VPN ulanjak programmalar" else "VPN kullanacak uygulamalar", fontWeight = FontWeight.Bold) },
-            text = {
-                if (loading) {
-                    Text(if (tm) "Ýüklenýär..." else "Yükleniyor...")
-                } else {
-                    LazyColumn(Modifier.heightIn(max = 380.dp)) {
-                        items(apps, key = { it.pkg }) { app ->
-                            val checked = app.pkg in selected
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .clickable { save(if (checked) selected - app.pkg else selected + app.pkg) }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = checked,
-                                    onCheckedChange = { save(if (checked) selected - app.pkg else selected + app.pkg) },
-                                    colors = CheckboxDefaults.colors(checkedColor = PurpleMain)
-                                )
-                                Text(app.label, color = Color.White, fontSize = 14.sp, maxLines = 1)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showPicker = false }) {
-                    Text(if (tm) "Taýyn" else "Tamam", color = PurpleLight, fontWeight = FontWeight.Bold)
-                }
-            }
-        )
     }
 }
