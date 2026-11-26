@@ -1534,7 +1534,7 @@ private fun GameToolsTab(
     var showBoosterScreen by remember { mutableStateOf(false) }
 
     if (showBoosterScreen) {
-        // Bizim BoosterIntro.kt içindeki mükemmel animasyonlu ekran
+        // Senin BoosterIntro.kt içindeki mükemmel animasyonlu ekran
         GameBoosterScreen(
             lang = lang,
             prefs = prefs,
@@ -1566,14 +1566,21 @@ private fun GameToolsTab(
         
         Spacer(Modifier.height(24.dp))
 
-        // --- GAME BOOSTER KARTI BURAYA GELİYOR ---
+        // Game Booster Kartı (onOpen parametresi kaldırıldı)
         BoosterHeroCard(
             lang = lang,
             prefs = prefs,
-            feedback = feedback,
-            onOpen = { showBoosterScreen = true }
+            feedback = feedback
         )
-        // -----------------------------------------
+
+        Spacer(Modifier.height(16.dp))
+
+        // Animasyonlu Game Booster Ekranını Açan Butonumuz
+        NeonButton(
+            text = if (tm) "GAME BOOSTER PANELINI AÇ" else "GAME BOOSTER PANELİNİ AÇ",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { feedback(FeedbackType.TAP); showBoosterScreen = true }
+        )
 
         Spacer(Modifier.height(24.dp))
 
