@@ -84,14 +84,18 @@ object RedeemManager {
         return@withContext Pair(false, null)
     }
 
-    // VIP KODU DOĞRUDAN VERİTABANINDAN OKUYAN FONKSİYON
+    // VIP KODU DOĞRUDAN VERİTABANINDAN OKUYAN FONKSİYON (GÜNCELLENDİ)
     suspend fun redeemCode(context: Context, code: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val deviceId = getDeviceId(context)
         val cleanCode = code.trim().toUpperCase()
         
         try {
-            // 1. Kodu doğrudan veritabanından sorgula
-            val url = URL("$SUPABASE_URL/rest/v1/redeem_codes?code=eq.$cleanCode&select=*")
+            // 1. Girilen kodu SHA-256 ile şifrele (Veritabanındaki code_hash ile eşleşmesi için)
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(cleanCode.toByteArray())
+            val codeHash = digest.fold("") { str, it -> str + "%02x".format(it) }
+
+            // 2. Şifrelenmiş kodu veritabanında ara
+            val url = URL("$SUPABASE_URL/rest/v1/redeem_codes?code_hash=eq.$codeHash&select=*")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = 5000
@@ -100,11 +104,11 @@ object RedeemManager {
             conn.setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
 
             val responseCode = conn.responseCode
-if (responseCode !in 200..299) {
-    val errorStream = conn.errorStream
-    val errorText = errorStream?.bufferedReader()?.use { it.readText() } ?: "Bilinmeyen Hata"
-    return@withContext Pair(false, "Hata $responseCode: $errorText")
-}
+            if (responseCode !in 200..299) {
+                val errorStream = conn.errorStream
+                val errorText = errorStream?.bufferedReader()?.use { it.readText() } ?: "Bilinmeyen Hata"
+                return@withContext Pair(false, "Hata $responseCode: $errorText")
+            }
 
             val response = conn.inputStream.bufferedReader().use { it.readText() }
             val jsonArray = JSONArray(response)
@@ -120,8 +124,9 @@ if (responseCode !in 200..299) {
                 return@withContext Pair(false, "Bu kod daha önce kullanılmış.")
             }
             
-            // 2. Kodu "kullanıldı" olarak işaretle
-            val updateUrl = URL("$SUPABASE_URL/rest/v1/redeem_codes?code=eq.$cleanCode")
+            // 3. Kodu "kullanıldı" olarak işaretle (id ile güncellemek en garantisidir)
+            val id = codeData.getString("id")
+            val updateUrl = URL("$SUPABASE_URL/rest/v1/redeem_codes?id=eq.$id")
             val updateConn = updateUrl.openConnection() as HttpURLConnection
             updateConn.requestMethod = "PATCH"
             updateConn.doOutput = true
@@ -138,7 +143,7 @@ if (responseCode !in 200..299) {
             os.flush()
             os.close()
             
-            // 3. Süreyi hesapla ve cihaza kaydet
+            // 4. Süreyi hesapla ve cihaza kaydet
             val days = codeData.optInt("duration_days", 30)
             val endDateMs = System.currentTimeMillis() + (days * 24L * 60L * 60L * 1000L)
             
@@ -153,7 +158,7 @@ if (responseCode !in 200..299) {
                 .putLong(KEY_LAST_CHECK, System.currentTimeMillis())
                 .apply()
 
-            // Opsiyonel: vip_subscriptions tablosuna da yaz
+            // Opsiyonel: vip_subscriptions tablosuna da yaz (İleride cihaz değişirse diye)
             try {
                 val vipUrl = URL("$SUPABASE_URL/rest/v1/vip_subscriptions")
                 val vipConn = vipUrl.openConnection() as HttpURLConnection
