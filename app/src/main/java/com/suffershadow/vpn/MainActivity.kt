@@ -666,10 +666,10 @@ fun AppRoot() {
                         gameState.backup = null
                         android.widget.Toast.makeText(context, if (lang == "tm") "Ölçeg taryhy arassalandy" else "Ölçüm geçmişi temizlendi", android.widget.Toast.LENGTH_SHORT).show()
                     },
-                        prefs = prefs,
-    feedback = feedback,
-    onOpenVip = { showVipScreen = true }
-)
+                    prefs = prefs,
+                    feedback = feedback,
+                    onOpenVip = { showVipScreen = true }
+                )
                 else -> ProfileTab(prefs = prefs, feedback = feedback)
             }
         }
@@ -954,154 +954,177 @@ private fun ServersTab(
     }
 }
 @Composable
-private fun SocialIcon(type: String, modifier: Modifier = Modifier) {
-    Text(
-        text = if (type == "tiktok") "🎵" else "✈️",
-        modifier = modifier,
-        fontSize = 18.sp
+private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
+    var isLoggedIn by remember { mutableStateOf(false) }
+    var phoneId by remember { mutableStateOf("") }
+    var showAuthDialog by remember { mutableStateOf(false) }
+    var isRegisterMode by remember { mutableStateOf(false) }
+
+    if (!isLoggedIn) {
+        Column(
+            Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("S", color = PurpleLight, fontSize = 80.sp, fontWeight = FontWeight.Black)
+            Text("SUFFER SHADOW", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Spacer(Modifier.height(40.dp))
+            
+            Text(
+                text = "Devam etmek için giriş yapmalısınız.",
+                color = TextMuted, fontSize = 14.sp, textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(20.dp))
+            
+            NeonButton(
+                text = "Giriş Yap",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { feedback(FeedbackType.TAP); isRegisterMode = false; showAuthDialog = true }
+            )
+            Spacer(Modifier.height(12.dp))
+            NeonButton(
+                text = "Yeni Hesap Oluştur",
+                modifier = Modifier.fillMaxWidth(),
+                secondary = true,
+                onClick = { feedback(FeedbackType.TAP); isRegisterMode = true; showAuthDialog = true }
+            )
+        }
+    } else {
+        val uriHandler = LocalUriHandler.current
+
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("PROFİLİM", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("ID: $phoneId", color = PurpleLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            
+            Spacer(Modifier.height(24.dp))
+            
+            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("SOSYAL MEDYA", color = PurpleLight, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+                    
+                    SocialMediaRow(
+                        icon = "🎵", title = "TikTok Kanalım", 
+                        buttonText = "Abone Ol", buttonColor = Color(0xFF00F2FE),
+                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://tiktok.com/@suffer_pubg") } }
+                    )
+                    SocialMediaRow(
+                        icon = "✈️", title = "Suffere Yaz", 
+                        buttonText = "Mesaj", buttonColor = Color(0xFF229ED9),
+                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_pubg") } }
+                    )
+                    SocialMediaRow(
+                        icon = "📢", title = "Telegram Kanalımız", 
+                        buttonText = "Abone Ol", buttonColor = Color(0xFF229ED9),
+                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffervpn") } }
+                    )
+                    SocialMediaRow(
+                        icon = "💬", title = "Telegram Sohbetimiz", 
+                        buttonText = "Katıl", buttonColor = Color(0xFF229ED9),
+                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_chat") } }
+                    )
+                }
+            }
+            
+            Spacer(Modifier.height(30.dp))
+            
+            NeonButton(
+                text = "Çıkış Yap",
+                modifier = Modifier.fillMaxWidth(),
+                secondary = true,
+                onClick = { feedback(FeedbackType.TAP); isLoggedIn = false; phoneId = "" }
+            )
+        }
+    }
+
+    if (showAuthDialog) {
+        AuthDialog(
+            isRegister = isRegisterMode,
+            onDismiss = { showAuthDialog = false },
+            onSuccess = { id ->
+                phoneId = id
+                isLoggedIn = true
+                showAuthDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun SocialMediaRow(icon: String, title: String, buttonText: String, buttonColor: Color, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CardBg2).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(icon, fontSize = 24.sp)
+        Spacer(Modifier.width(12.dp))
+        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        AnimatedSurface(shape = RoundedCornerShape(8.dp), color = buttonColor.copy(alpha = 0.2f), onClick = onClick) {
+            Text(text = buttonText, color = buttonColor, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+        }
+    }
+}
+
+@Composable
+private fun AuthDialog(isRegister: Boolean, onDismiss: () -> Unit, onSuccess: (String) -> Unit) {
+    var phone by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
+    var passConfirm by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardBg,
+        titleContentColor = Color.White,
+        textContentColor = TextMuted,
+        title = { Text(if (isRegister) "Yeni Hesap Oluştur" else "Giriş Yap", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("🇹🇲 +993", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = phone,
+                        onValueChange = { if (it.length <= 8) phone = it.filter { char -> char.isDigit() } },
+                        placeholder = { Text("61234567") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PurpleMain, unfocusedBorderColor = TextMuted)
+                    )
+                }
+                OutlinedTextField(
+                    value = pass,
+                    onValueChange = { pass = it },
+                    label = { Text("Şifre") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PurpleMain, unfocusedBorderColor = TextMuted)
+                )
+                if (isRegister) {
+                    OutlinedTextField(
+                        value = passConfirm,
+                        onValueChange = { passConfirm = it },
+                        label = { Text("Şifreyi Onayla") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PurpleMain, unfocusedBorderColor = TextMuted)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (phone.isNotEmpty() && pass.isNotEmpty()) {
+                    onSuccess(phone)
+                }
+            }) {
+                Text(if (isRegister) "Kayıt Ol" else "Giriş Yap", color = PurpleLight, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Vazgeç", color = TextMuted) }
+        }
     )
 }
-
-@Composable
-private fun ProfileLinkButton(tag: String, title: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    AnimatedSurface(
-        modifier = modifier.height(76.dp),
-        color = Color(0xFF1C1E32),
-        shape = RoundedCornerShape(12.dp),
-        onClick = onClick
-    ) {
-        Column(Modifier.fillMaxSize().padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            SocialIcon(tag)
-            Spacer(Modifier.height(4.dp))
-            Text(title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, maxLines = 2)
-        }
-    }
-}
-
-@Composable
-private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
-    val context = LocalContext.current
-    val uriHandler = LocalUriHandler.current
-    var profileName by remember { mutableStateOf(prefs.getString("profile_name", "Suffer Shadow") ?: "Suffer Shadow") }
-    var photoUriText by remember { mutableStateOf(prefs.getString("profile_photo_uri", null)) }
-    var photoBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    var showEditDialog by remember { mutableStateOf(false) }
-    var editedName by remember { mutableStateOf(profileName) }
-
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            photoUriText = uri.toString()
-            prefs.edit().putString("profile_photo_uri", photoUriText).apply()
-        }
-    }
-
-    LaunchedEffect(photoUriText) {
-        photoBitmap = null
-        val savedUri = photoUriText?.let { runCatching { Uri.parse(it) }.getOrNull() }
-        if (savedUri != null) {
-            val handler = Handler(Looper.getMainLooper())
-            thread {
-                val bitmap = runCatching {
-                    context.contentResolver.openInputStream(savedUri)?.use { stream -> BitmapFactory.decodeStream(stream)?.asImageBitmap() }
-                }.getOrNull()
-                handler.post { photoBitmap = bitmap }
-            }
-        }
-    }
-
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("PROFİL", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-        Text("Suffer Shadow topluluğu", color = TextMuted, fontSize = 12.sp)
-        Spacer(Modifier.height(20.dp))
-        Box(contentAlignment = Alignment.BottomEnd) {
-            Box(
-                Modifier.size(124.dp).clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(PurpleLight, PurpleDeep, CardBg)))
-                    .border(3.dp, PurpleLight, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                if (photoBitmap != null) {
-                    Image(bitmap = photoBitmap!!, contentDescription = "Profil fotoğrafı", modifier = Modifier.fillMaxSize().clip(CircleShape))
-                } else {
-                    Text("S", color = Color.White, fontSize = 66.sp, fontWeight = FontWeight.Black)
-                }
-            }
-            AnimatedSurface(
-                modifier = Modifier.size(39.dp).border(2.dp, BgDark, CircleShape),
-                shape = CircleShape,
-                brush = Brush.linearGradient(listOf(PurpleLight, PurpleMain)),
-                onClick = { feedback(FeedbackType.TAP); photoPicker.launch(arrayOf("image/*")) },
-                contentAlignment = Alignment.Center
-            ) { Text("+", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold) }
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(profileName, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(8.dp))
-            TextButton(onClick = { feedback(FeedbackType.TAP); editedName = profileName; showEditDialog = true }) {
-                Text("Düzenle", color = PurpleLight, fontSize = 12.sp)
-            }
-        }
-        Text("VPN Kullanıcısı", color = TextMuted, fontSize = 12.sp)
-
-        Spacer(Modifier.height(22.dp))
-        AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text("SOSYAL MEDYA", color = PurpleLight, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    ProfileLinkButton("tiktok", "TikTok kanalım", Modifier.weight(1f)) { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://tiktok.com/@suffer_pubg") } }
-                    ProfileLinkButton("telegram", "Suffere yaz", Modifier.weight(1f)) { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_pubg") } }
-                }
-                Spacer(Modifier.height(9.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    ProfileLinkButton("telegram", "Kanala abone ol", Modifier.weight(1f)) { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffervpn") } }
-                    ProfileLinkButton("telegram", "Sohbete katıl", Modifier.weight(1f)) { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_chat") } }
-                }
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        NeonButton(
-            text = "SUFFERE YAZ",
-            modifier = Modifier.fillMaxWidth(),
-            leading = "➤",
-            onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_pubg") } }
-        )
-        Spacer(Modifier.height(18.dp))
-        Text("SUFFER SHADOW • FAST VPN", color = TextMuted, fontSize = 10.sp, letterSpacing = 2.sp)
-        Spacer(Modifier.height(18.dp))
-    }
-
-    if (showEditDialog) {
-        AlertDialog(
-            onDismissRequest = { showEditDialog = false },
-            properties = DialogProperties(dismissOnClickOutside = true),
-            containerColor = CardBg,
-            title = { Text("Profil adını değiştir", color = Color.White) },
-            text = {
-                OutlinedTextField(
-                    value = editedName,
-                    onValueChange = { editedName = it },
-                    singleLine = true,
-                    label = { Text("Kullanıcı adı") }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    feedback(FeedbackType.TAP)
-                    profileName = editedName.trim().ifBlank { "Suffer Shadow" }
-                    prefs.edit().putString("profile_name", profileName).apply()
-                    showEditDialog = false
-                }) { Text("Kaydet", color = PurpleLight) }
-            },
-            dismissButton = {
-                TextButton(onClick = { feedback(FeedbackType.TAP); showEditDialog = false }) { Text("Vazgeç", color = TextMuted) }
-            }
-        )
-    }
-}
-
 @Composable
 internal fun SectionHeading(number: String, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 9.dp)) {
@@ -1172,6 +1195,7 @@ internal fun InfoPill(modifier: Modifier = Modifier, title: String, subtitle: St
         Text(subtitle, color = TextMuted, fontSize = 11.sp, maxLines = 1)
     }
 }
+
 @Composable
 internal fun NeonButton(
     text: String,
@@ -1328,9 +1352,6 @@ fun SufferShadowTheme(content: @Composable () -> Unit) {
     )
 }
 
-// =====================================================================
-// OYUN ARAÇLARI ARKA PLAN MANTIĞI (Görünmez, arka planda çalışır)
-// =====================================================================
 object GamePrefs {
     const val BLOCK_BACKGROUND = "gm_block_bg"
     const val PRIORITIZE_GAME = "gm_priority"
@@ -1402,9 +1423,6 @@ internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
-// =====================================================================
-// YENİ TEMİZLENMİŞ OYUN SEKMESİ (Sadece Redeem Kodu)
-// =====================================================================
 @Composable
 private fun GameToolsTab(
     lang: String,
@@ -1424,7 +1442,7 @@ private fun GameToolsTab(
     onSound: (Boolean) -> Unit,
     onVibration: (Boolean) -> Unit,
     onClearMeasurements: () -> Unit,
-        prefs: android.content.SharedPreferences,
+    prefs: android.content.SharedPreferences,
     feedback: (FeedbackType) -> Unit,
     onOpenVip: () -> Unit
 ) {
@@ -1453,28 +1471,28 @@ private fun GameToolsTab(
         Spacer(Modifier.height(24.dp))
 
         AnimatedSurface(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(12.dp),
-    color = CardBg,
-    onClick = { feedback(FeedbackType.TAP); onOpenVip() }
-) {
-    Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("🎟️", fontSize = 32.sp)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(12.dp))
-        NeonButton(
-            text = if (tm) "KODY ULAN" else "KODU KULLAN",
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = CardBg,
             onClick = { feedback(FeedbackType.TAP); onOpenVip() }
-        )
-    }
+        ) {
+            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("🎟️", fontSize = 32.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(12.dp))
+                NeonButton(
+                    text = if (tm) "KODY ULAN" else "KODU KULLAN",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { feedback(FeedbackType.TAP); onOpenVip() }
+                )
+            }
         }
 
         Spacer(Modifier.height(30.dp))
