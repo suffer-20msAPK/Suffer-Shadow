@@ -1531,6 +1531,18 @@ private fun GameToolsTab(
     onOpenVip: () -> Unit
 ) {
     val tm = lang == "tm"
+    var showBoosterScreen by remember { mutableStateOf(false) }
+
+    if (showBoosterScreen) {
+        // Bizim BoosterIntro.kt içindeki mükemmel animasyonlu ekran
+        GameBoosterScreen(
+            lang = lang,
+            prefs = prefs,
+            feedback = feedback,
+            onClose = { showBoosterScreen = false }
+        )
+        return
+    }
 
     Column(
         Modifier
@@ -1554,6 +1566,17 @@ private fun GameToolsTab(
         
         Spacer(Modifier.height(24.dp))
 
+        // --- GAME BOOSTER KARTI BURAYA GELİYOR ---
+        BoosterHeroCard(
+            lang = lang,
+            prefs = prefs,
+            feedback = feedback,
+            onOpen = { showBoosterScreen = true }
+        )
+        // -----------------------------------------
+
+        Spacer(Modifier.height(24.dp))
+
         AnimatedSurface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -1575,37 +1598,6 @@ private fun GameToolsTab(
                     text = if (tm) "KODY ULAN" else "KODU KULLAN",
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { feedback(FeedbackType.TAP); onOpenVip() }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(30.dp))
-        
-        AnimatedSurface(
-            modifier = Modifier.fillMaxWidth(),
-            color = CardBg,
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(
-                Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("⚡", fontSize = 40.sp)
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = if (tm) "Täze oýun gurallary ýakyn wagtda goşular" else "Yeni oyun araçları çok yakında eklenecek",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = if (tm) "Ping testleri, Game Booster we beýlekiler täzeden guralýar." else "Ping testleri, Game Booster ve diğerleri sıfırdan, daha profesyonel bir tasarımla inşa ediliyor.",
-                    color = TextMuted,
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 16.sp
                 )
             }
         }
