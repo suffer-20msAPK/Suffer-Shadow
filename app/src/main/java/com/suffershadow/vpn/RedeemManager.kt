@@ -100,9 +100,11 @@ object RedeemManager {
             conn.setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
 
             val responseCode = conn.responseCode
-            if (responseCode !in 200..299) {
-                return@withContext Pair(false, "Sunucuya bağlanılamadı. (Kod: $responseCode)")
-            }
+if (responseCode !in 200..299) {
+    val errorStream = conn.errorStream
+    val errorText = errorStream?.bufferedReader()?.use { it.readText() } ?: "Bilinmeyen Hata"
+    return@withContext Pair(false, "Hata $responseCode: $errorText")
+}
 
             val response = conn.inputStream.bufferedReader().use { it.readText() }
             val jsonArray = JSONArray(response)
