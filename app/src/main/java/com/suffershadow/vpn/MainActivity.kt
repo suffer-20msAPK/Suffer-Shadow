@@ -85,9 +85,6 @@ import kotlin.math.sin
 import org.json.JSONArray
 import java.net.HttpURLConnection
 
-// ==========================================
-// CYBERPUNK RENK PALETİ (B PLANI)
-// ==========================================
 internal val BgDark = Color(0xFF07080D)
 internal val BgTop = Color(0xFF121422)
 internal val CardBg = Color(0xFF121422)
@@ -100,7 +97,6 @@ internal val RedSoft = Color(0xFFFF3366)
 internal val TextMuted = Color(0xFF8E92A6)
 internal val BorderPurple = Color(0xFF6C00B8)
 
-// SUPABASE BAĞLANTI AYARLARI
 private const val SUPABASE_URL = "https://yeizclxibejfqhtfyqmi.supabase.co"
 private const val SUPABASE_ANON_KEY = "sb_publishable_U8scDtQmhf830Pb5r65jxw_paP_dRRa"
 
@@ -149,7 +145,6 @@ data class Server(
     val isBuiltIn: Boolean = false,
     val category: String = "custom"
 )
-
 fun parseServer(raw: String, isBuiltIn: Boolean = false, category: String = "custom"): Server? {
     val link = raw.trim()
     return try {
@@ -189,7 +184,6 @@ fun pingServer(s: Server): Int {
     }
 }
 
-// SUPABASE'DEN SUNUCULARI ÇEKEN YENİ FONKSİYON
 fun fetchRemoteServers(category: String, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
@@ -330,7 +324,6 @@ fun AppRoot() {
     val builtInSocial = remember { mutableStateListOf<Server>() }
     val builtInPubg = remember { mutableStateListOf<Server>() }
 
-    // BURASI GÜNCELLENDİ: Sadece Supabase'den çeker, Test Et'e basılmadıkça kaybolmaz
     val loadRemoteData = {
         fetchRemoteServers("social") { fetched ->
             builtInSocial.clear()
@@ -342,7 +335,6 @@ fun AppRoot() {
         }
     }
 
-    // Uygulama ilk açıldığında 1 kez çalışır
     LaunchedEffect(Unit) { loadRemoteData() }
 
     val pings = remember { mutableStateMapOf<String, Int>() }
@@ -402,180 +394,179 @@ fun AppRoot() {
     val connect = rememberVpnConnect()
     val allServers = servers + builtInSocial + builtInPubg
     val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
-
     val save: () -> Unit = {
-        prefs.edit()
-            .putString("links", servers.joinToString("\n") { it.link })
-            .putInt("sel", selected)
-            .apply()
-    }
+    prefs.edit()
+        .putString("links", servers.joinToString("\n") { it.link })
+        .putInt("sel", selected)
+        .apply()
+}
 
-    val measure: (Server) -> Unit = { server ->
-        pings[server.link] = -2
-        thread {
-            val result = pingServer(server)
-            Handler(Looper.getMainLooper()).post { pings[server.link] = result }
+val measure: (Server) -> Unit = { server ->
+    pings[server.link] = -2
+    thread {
+        val result = pingServer(server)
+        Handler(Looper.getMainLooper()).post { pings[server.link] = result }
+    }
+}
+
+LaunchedEffect(servers) { servers.forEach { measure(it) } }
+
+val selectedIndex = if (allServers.isEmpty()) -1 else selected.coerceIn(0, allServers.size - 1)
+val current = allServers.getOrNull(selectedIndex)
+
+LaunchedEffect(current?.link) {
+    prefs.edit()
+        .putString("active_name", current?.name ?: "")
+        .putString("active_host", current?.host ?: "")
+        .putInt("active_port", current?.port ?: 0)
+        .apply()
+}
+
+val gameState = remember { GameToolsState(prefs) }
+val gameScope = rememberCoroutineScope()
+
+LaunchedEffect(current?.link) {
+    gameState.history.clear()
+    gameState.backupDismissedFor = null
+    val target = current ?: return@LaunchedEffect
+    while (true) {
+        val ms = withContext(Dispatchers.IO) { pingServer(target) }
+        val now = System.currentTimeMillis()
+        gameState.history.add(GamePingSample(now, ms))
+        while (gameState.history.isNotEmpty() && gameState.history[0].timeMs < now - 30 * 60_000L) {
+            gameState.history.removeAt(0)
         }
+        delay(3000L)
     }
+}
 
-    LaunchedEffect(servers) { servers.forEach { measure(it) } }
-
-    val selectedIndex = if (allServers.isEmpty()) -1 else selected.coerceIn(0, allServers.size - 1)
-    val current = allServers.getOrNull(selectedIndex)
-
-    LaunchedEffect(current?.link) {
-        prefs.edit()
-            .putString("active_name", current?.name ?: "")
-            .putString("active_host", current?.host ?: "")
-            .putInt("active_port", current?.port ?: 0)
-            .apply()
+val failStreak = gameState.history.takeLastWhile { it.ms < 0 }.size
+val tunnelAlive = VpnState.status == VpnState.CONNECTED && VpnState.delayMs.toInt() >= 0
+val needBackup = gameState.suggestBackup && current != null && failStreak >= 5 && !tunnelAlive &&
+    gameState.backupDismissedFor != current.link
+LaunchedEffect(needBackup, current?.link) {
+    if (needBackup && current != null) {
+        val others = allServers.filter { it.link != current.link }.take(20)
+        gameState.backup = rankServers(others).firstOrNull { it.result.avg >= 0 && it.result.lossPct < 50 }
+    } else {
+        gameState.backup = null
     }
+}
 
-    val gameState = remember { GameToolsState(prefs) }
-    val gameScope = rememberCoroutineScope()
+BackHandler(enabled = showServers) { showServers = false }
 
-    LaunchedEffect(current?.link) {
-        gameState.history.clear()
-        gameState.backupDismissedFor = null
-        val target = current ?: return@LaunchedEffect
-        while (true) {
-            val ms = withContext(Dispatchers.IO) { pingServer(target) }
-            val now = System.currentTimeMillis()
-            gameState.history.add(GamePingSample(now, ms))
-            while (gameState.history.isNotEmpty() && gameState.history[0].timeMs < now - 30 * 60_000L) {
-                gameState.history.removeAt(0)
-            }
-            delay(3000L)
-        }
-    }
-
-    val failStreak = gameState.history.takeLastWhile { it.ms < 0 }.size
-    val tunnelAlive = VpnState.status == VpnState.CONNECTED && VpnState.delayMs.toInt() >= 0
-    val needBackup = gameState.suggestBackup && current != null && failStreak >= 5 && !tunnelAlive &&
-        gameState.backupDismissedFor != current.link
-    LaunchedEffect(needBackup, current?.link) {
-        if (needBackup && current != null) {
-            val others = allServers.filter { it.link != current.link }.take(20)
-            gameState.backup = rankServers(others).firstOrNull { it.result.avg >= 0 && it.result.lossPct < 50 }
+val onSelect: (Int) -> Unit = { index ->
+    feedback(FeedbackType.TAP)
+    selected = index
+    save()
+    showServers = false
+    val server = allServers.getOrNull(index)
+    if (server != null) {
+        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+            stopVpnService(context)
+            Handler(Looper.getMainLooper()).postDelayed({ connect(server) }, 900)
         } else {
-            gameState.backup = null
+            connect(server)
         }
     }
+}
 
-    BackHandler(enabled = showServers) { showServers = false }
-
-    val onSelect: (Int) -> Unit = { index ->
-        feedback(FeedbackType.TAP)
-        selected = index
+val onDelete: (Int) -> Unit = { index ->
+    feedback(FeedbackType.TAP)
+    val server = servers.getOrNull(index)
+    if (server != null) {
+        if (index == selectedIndex && (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING)) {
+            stopVpnService(context)
+        }
+        pings.remove(server.link)
+        servers.removeAt(index)
+        selected = when {
+            servers.isEmpty() -> 0
+            index < selected -> selected - 1
+            selected >= servers.size -> servers.size - 1
+            else -> selected
+        }
         save()
-        showServers = false
-        val server = allServers.getOrNull(index)
-        if (server != null) {
-            if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
-                stopVpnService(context)
-                Handler(Looper.getMainLooper()).postDelayed({ connect(server) }, 900)
-            } else {
-                connect(server)
-            }
+    }
+}
+
+val onAdd: () -> Unit = {
+    feedback(FeedbackType.TAP)
+    var added = 0
+    input.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
+        val server = parseServer(line, isBuiltIn = false)
+        if (server != null && servers.none { it.link == server.link }) {
+            servers.add(server)
+            measure(server)
+            added++
         }
     }
-
-    val onDelete: (Int) -> Unit = { index ->
-        feedback(FeedbackType.TAP)
-        val server = servers.getOrNull(index)
-        if (server != null) {
-            if (index == selectedIndex && (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING)) {
-                stopVpnService(context)
-            }
-            pings.remove(server.link)
-            servers.removeAt(index)
-            selected = when {
-                servers.isEmpty() -> 0
-                index < selected -> selected - 1
-                selected >= servers.size -> servers.size - 1
-                else -> selected
-            }
-            save()
-        }
+    if (added > 0) {
+        input = ""
+        save()
+        message = if (lang == "tm") "$added serwer goşuldy" else "$added sunucu eklendi"
+    } else {
+        message = if (lang == "tm") "Goşup bolmady. Diňe goldanýan VLESS/SS linklerini barla." else "Eklenemedi. Desteklenen VLESS/SS bağlantılarını kontrol et."
     }
+}
 
-    val onAdd: () -> Unit = {
-        feedback(FeedbackType.TAP)
-        var added = 0
-        input.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
-            val server = parseServer(line, isBuiltIn = false)
-            if (server != null && servers.none { it.link == server.link }) {
-                servers.add(server)
-                measure(server)
-                added++
-            }
-        }
-        if (added > 0) {
-            input = ""
-            save()
-            message = if (lang == "tm") "$added serwer goşuldy" else "$added sunucu eklendi"
-        } else {
-            message = if (lang == "tm") "Goşup bolmady. Diňe goldanýan VLESS/SS linklerini barla." else "Eklenemedi. Desteklenen VLESS/SS bağlantılarını kontrol et."
-        }
-    }
-
-    val switchToServer: (Server) -> Unit = { target ->
-        val idx = allServers.indexOfFirst { it.link == target.link }
-        if (idx >= 0) {
-            if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
-                onSelect(idx)
-                gameScope.launch {
-                    delay(15000L)
-                    if (VpnState.status != VpnState.CONNECTED) {
-                        android.widget.Toast.makeText(
-                            context,
-                            if (lang == "tm") "Ätiýaçlyk serwere geçip bolmady. Gaýtadan birikmegi synanyşyň." else "Yedek sunucuya geçilemedi. Tekrar bağlanmayı dene.",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-                    }
+val switchToServer: (Server) -> Unit = { target ->
+    val idx = allServers.indexOfFirst { it.link == target.link }
+    if (idx >= 0) {
+        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+            onSelect(idx)
+            gameScope.launch {
+                delay(15000L)
+                if (VpnState.status != VpnState.CONNECTED) {
+                    android.widget.Toast.makeText(
+                        context,
+                        if (lang == "tm") "Ätiýaçlyk serwere geçip bolmady. Gaýtadan birikmegi synanyşyň." else "Yedek sunucuya geçilemedi. Tekrar bağlanmayı dene.",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
                 }
-            } else {
-                selected = idx
-                save()
             }
+        } else {
+            selected = idx
+            save()
         }
     }
+}
 
-    gameState.backup?.let { b ->
-        GameBackupDialog(
-            lang = lang,
-            ranked = b,
-            failedName = current?.name ?: "",
-            auto = gameState.autoFailover,
-            onSwitch = { gameState.backup = null; switchToServer(b.server) },
-            onDismiss = { gameState.backupDismissedFor = current?.link; gameState.backup = null }
-        )
-    }
+gameState.backup?.let { b ->
+    GameBackupDialog(
+        lang = lang,
+        ranked = b,
+        failedName = current?.name ?: "",
+        auto = gameState.autoFailover,
+        onSwitch = { gameState.backup = null; switchToServer(b.server) },
+        onDismiss = { gameState.backupDismissedFor = current?.link; gameState.backup = null }
+    )
+}
 
-    if (sessionExpired) {
-        AlertDialog(
-            onDismissRequest = { sessionExpired = false },
-            containerColor = CardBg,
-            titleContentColor = Color.White,
-            textContentColor = TextMuted,
-            title = { Text(if (lang == "tm") "Wagt gutardy" else "Süre doldu", fontWeight = FontWeight.Bold) },
-            text = { Text(if (lang == "tm") "2 sagatlyk sessiýa gutardy we VPN ýapyldy. Gaýtadan birikseňiz täze sessiýa başlanar." else "2 saatlik oturum doldu ve VPN kapatıldı. Yeniden bağlanırsan yeni oturum başlar.") },
-            confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
-        )
-    }
+if (sessionExpired) {
+    AlertDialog(
+        onDismissRequest = { sessionExpired = false },
+        containerColor = CardBg,
+        titleContentColor = Color.White,
+        textContentColor = TextMuted,
+        title = { Text(if (lang == "tm") "Wagt gutardy" else "Süre doldu", fontWeight = FontWeight.Bold) },
+        text = { Text(if (lang == "tm") "2 sagatlyk sessiýa gutardy we VPN ýapyldy. Gaýtadan birikseňiz täze sessiýa başlanar." else "2 saatlik oturum doldu ve VPN kapatıldı. Yeniden bağlanırsan yeni oturum başlar.") },
+        confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
+    )
+}
 
-    if (showVipScreen) {
-        VipScreen(
-            prefs = prefs,
-            onVipActivated = {
-                isVipUser = true
-                showVipScreen = false
-            },
-            onDismiss = { showVipScreen = false }
-        )
-        return
-    }
-        Scaffold(
+if (showVipScreen) {
+    VipScreen(
+        prefs = prefs,
+        onVipActivated = {
+            isVipUser = true
+            showVipScreen = false
+        },
+        onDismiss = { showVipScreen = false }
+    )
+    return
+}
+    Scaffold(
         containerColor = BgDark,
         contentColor = Color.White,
         bottomBar = {
@@ -694,7 +685,6 @@ fun AppRoot() {
         }
     }
 }
-
 @Composable
 private fun HomeTab(
     lang: String,
@@ -972,7 +962,6 @@ private fun ServersTab(
         }
     }
 }
-
 @Composable
 private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
     var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
@@ -1075,6 +1064,7 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
         )
     }
 }
+
 @Composable
 private fun SocialMediaRow(icon: String, title: String, buttonText: String, buttonColor: Color, onClick: () -> Unit) {
     Row(
@@ -1220,7 +1210,6 @@ private fun AuthDialog(
         }
     )
 }
-
 @Composable
 internal fun SectionHeading(number: String, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 9.dp)) {
@@ -1503,6 +1492,14 @@ private suspend fun rankServers(list: List<Server>): List<GameRanked> = emptyLis
 
 @Composable
 private fun GameBackupDialog(
+    lang: String,
+    ranked: GameRanked,
+    failedName: String,
+    auto: Boolean,
+    onSwitch: () -> Unit,
+    onDismiss: () -> Unit
+) {}
+
 @Composable
 internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
     AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
