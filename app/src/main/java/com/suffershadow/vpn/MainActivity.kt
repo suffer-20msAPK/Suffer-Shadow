@@ -1012,6 +1012,69 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
                         buttonText = "Mesaj", buttonColor = Color(0xFF229ED9),
                         onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_pubg") } }
                     )
+@Composable
+private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
+    // Hafızadan giriş durumunu oku (Eğer daha önce giriş yaptıysa true gelir)
+    var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
+    var phoneId by remember { mutableStateOf(prefs.getString("logged_in_phone", "") ?: "") }
+    var showAuthDialog by remember { mutableStateOf(false) }
+    var isRegisterMode by remember { mutableStateOf(false) }
+
+    if (!isLoggedIn) {
+        // GİRİŞ YAPILMAMIŞSA
+        Column(
+            Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("S", color = PurpleLight, fontSize = 80.sp, fontWeight = FontWeight.Black)
+            Text("SUFFER SHADOW", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Spacer(Modifier.height(40.dp))
+            
+            Text(
+                text = "Devam etmek için giriş yapmalısınız.",
+                color = TextMuted, fontSize = 14.sp, textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(20.dp))
+            
+            NeonButton(
+                text = "Giriş Yap",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { feedback(FeedbackType.TAP); isRegisterMode = false; showAuthDialog = true }
+            )
+            Spacer(Modifier.height(12.dp))
+            NeonButton(
+                text = "Yeni Hesap Oluştur",
+                modifier = Modifier.fillMaxWidth(),
+                secondary = true,
+                onClick = { feedback(FeedbackType.TAP); isRegisterMode = true; showAuthDialog = true }
+            )
+        }
+    } else {
+        // GİRİŞ YAPILMIŞSA (Profil Ekranı)
+        val uriHandler = LocalUriHandler.current
+
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("PROFİLİM", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("ID: $phoneId", color = PurpleLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            
+            Spacer(Modifier.height(24.dp))
+            
+            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("SOSYAL MEDYA", color = PurpleLight, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+                    
+                    SocialMediaRow(
+                        icon = "🎵", title = "TikTok Kanalım", 
+                        buttonText = "Abone Ol", buttonColor = Color(0xFF00F2FE),
+                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://tiktok.com/@suffer_pubg") } }
+                    )
+                    SocialMediaRow(
+                        icon = "✈️", title = "Suffere Yaz", 
+                        buttonText = "Mesaj", buttonColor = Color(0xFF229ED9),
+                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_pubg") } }
+                    )
                     SocialMediaRow(
                         icon = "📢", title = "Telegram Kanalımız", 
                         buttonText = "Abone Ol", buttonColor = Color(0xFF229ED9),
@@ -1031,7 +1094,13 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
                 text = "Çıkış Yap",
                 modifier = Modifier.fillMaxWidth(),
                 secondary = true,
-                onClick = { feedback(FeedbackType.TAP); isLoggedIn = false; phoneId = "" }
+                onClick = { 
+                    feedback(FeedbackType.TAP)
+                    isLoggedIn = false
+                    phoneId = ""
+                    // Çıkış yapınca hafızayı temizle
+                    prefs.edit().putBoolean("is_logged_in", false).putString("logged_in_phone", "").apply()
+                }
             )
         }
     }
@@ -1043,6 +1112,8 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             onSuccess = { id ->
                 phoneId = id
                 isLoggedIn = true
+                // Giriş başarılı olunca hafızaya kaydet
+                prefs.edit().putBoolean("is_logged_in", true).putString("logged_in_phone", id).apply()
                 showAuthDialog = false
             }
         )
