@@ -32,9 +32,11 @@
     </queries>
 
     <application
-        android:allowBackup="true"
-        android:label="Suffer Shadow"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+    android:allowBackup="true"
+    android:label="Suffer Shadow"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher"
+    android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".MainActivity"
             android:exported="true"
