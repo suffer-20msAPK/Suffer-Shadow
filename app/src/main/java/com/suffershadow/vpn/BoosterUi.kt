@@ -35,16 +35,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch // HATA ÇÖZÜMÜ: Eklendi
+import kotlinx.coroutines.launch // <-- Bu import eksikti, eklendi
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
 // --- Efsanevi Açılış Sesi ve Animasyonu ---
-// HATA ÇÖZÜMÜ: Fonksiyon adı MainActivity ile uyumlu olması için BoosterHeroCard yapıldı
+// HATA ÇÖZÜMÜ: 'internal' yapıldı, böylece MainActivity'deki 'internal FeedbackType' hatası çözüldü.
 @Composable
-fun BoosterHeroCard(lang: String, prefs: SharedPreferences, feedback: (FeedbackType) -> Unit) {
+internal fun BoosterHeroCard(lang: String, prefs: SharedPreferences, feedback: (FeedbackType) -> Unit) {
     val tm = lang == "tm"
     val context = LocalContext.current
     var isBoosting by remember { mutableStateOf(false) }
@@ -101,7 +101,8 @@ fun BoosterHeroCard(lang: String, prefs: SharedPreferences, feedback: (FeedbackT
                     .border(3.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                     .clickable {
                         feedback(FeedbackType.CONNECT)
-                        BoosterSound.playChime() // Efsanevi ses
+                        // HATA ÇÖZÜMÜ: BoosterSound başka dosyada private olduğu için bu satır silindi.
+                        // Zaten yukarıdaki feedback komutu bağlanma sesini çalıyor.
                         isBoosting = true
                         BoosterState.enabled = true
                         prefs.edit().putBoolean(BoosterPrefs.ENABLED, true).apply()
@@ -216,7 +217,7 @@ internal fun RedeemSection(lang: String, prefs: SharedPreferences, feedback: (Fe
                 onClick = {
                     if (code.length < 4) return@NeonButton
                     busy = true
-                    scope.launch { // HATA ÇÖZÜMÜ: launch importu eklendiği için burası artık çalışacak
+                    scope.launch { // Buradaki launch hatası import eklendiği için çözüldü
                         val (success, m) = RedeemManager.redeemCode(context, code.trim())
                         busy = false
                         msg = m
