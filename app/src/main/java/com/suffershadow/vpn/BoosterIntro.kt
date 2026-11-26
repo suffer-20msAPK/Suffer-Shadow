@@ -59,20 +59,15 @@ import kotlin.random.Random
 private fun lx(tm: Boolean, tr: String, tk: String): String = if (tm) tk else tr
 private val Warn = Color(0xFFFFD166)
 
-// =====================================================================
-// AYARLAR
-// =====================================================================
-
 object IntroPrefs {
-    const val SOUND = "gb_intro_sound"       // açılış + boost sesleri
-    const val HAPTIC = "gb_intro_haptic"     // titreşim
-    const val QUALITY = "gb_intro_quality"   // auto | full | lite | off
-    const val PROFILE = "gb_profile"         // eco | balanced | ultimate
+    const val SOUND = "gb_intro_sound"
+    const val HAPTIC = "gb_intro_haptic"
+    const val QUALITY = "gb_intro_quality"
+    const val PROFILE = "gb_profile"
 }
 
 enum class IntroQuality { FULL, LITE, OFF }
 
-/** "auto" seçiliyse cihaz gücüne ve sistem animasyon ayarına göre karar verir. */
 fun resolveIntroQuality(context: Context, prefs: SharedPreferences): IntroQuality {
     when (prefs.getString(IntroPrefs.QUALITY, "auto")) {
         "full" -> return IntroQuality.FULL
@@ -82,23 +77,18 @@ fun resolveIntroQuality(context: Context, prefs: SharedPreferences): IntroQualit
     val animScale = try {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
     } catch (e: Exception) { 1f }
-    if (animScale == 0f) return IntroQuality.OFF // kullanıcı sistemde animasyonları kapatmış
+    if (animScale == 0f) return IntroQuality.OFF
     val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
     val weak = am.isLowRamDevice || am.memoryClass <= 192 ||
         Runtime.getRuntime().availableProcessors() <= 4 || BoosterState.reduceAnim
     return if (weak) IntroQuality.LITE else IntroQuality.FULL
 }
-
-// =====================================================================
-// PROFİLLER — her profil yalnızca uygulamanın gerçekten kontrol edebildiği şeyleri değiştirir
-// =====================================================================
-
 enum class BoostProfile(
     val key: String,
-    val intervalMs: Long,     // Game Booster servisinin ölçüm aralığı
-    val reduceAnim: Boolean,  // kayan panel animasyonları
-    val autoOverlay: Boolean, // oyun açılınca panel
-    val dnd: Boolean,         // oyun sırasında Rahatsız Etme
+    val intervalMs: Long,
+    val reduceAnim: Boolean,
+    val autoOverlay: Boolean,
+    val dnd: Boolean,
     val color: Color
 ) {
     ECO("eco", 5000L, true, false, false, Color(0xFF00EFA8)),
@@ -106,26 +96,18 @@ enum class BoostProfile(
     ULTIMATE("ultimate", 1000L, false, true, true, Color(0xFFFF4D8D));
 
     fun desc(tm: Boolean): String = when (this) {
-        ECO -> lx(tm,
-            "Ölçüm 5 sn'de bir • panel animasyonları kapalı • panel otomatik açılmaz. En az pil tüketimi.",
-            "Ölçeg 5 sekuntda bir • panel animasiýalary ýapyk • panel awtomatik açylmaýar. Iň az batareýa sarp edilýär.")
-        BALANCED -> lx(tm,
-            "Ölçüm 2 sn'de bir • oyun açılınca panel görünür • bildirimler normal.",
-            "Ölçeg 2 sekuntda bir • oýun açylanda panel görünýär • bildirişler adaty.")
-        ULTIMATE -> lx(tm,
-            "Ölçüm 1 sn'de bir (ping/jitter daha hızlı takip) • panel otomatik • oyunda Rahatsız Etme. Pil tüketimi biraz artar.",
-            "Ölçeg 1 sekuntda bir • panel awtomatik • oýunda Biynjalyk etme. Batareýa sarp edilişi birneme artýar.")
+        ECO -> lx(tm, "Ölçüm 5 sn'de bir • panel animasyonları kapalı • panel otomatik açılmaz. En az pil tüketimi.", "Ölçeg 5 sekuntda bir • panel animasiýalary ýapyk • panel awtomatik açylmaýar. Iň az batareýa sarp edilýär.")
+        BALANCED -> lx(tm, "Ölçüm 2 sn'de bir • oyun açılınca panel görünür • bildirimler normal.", "Ölçeg 2 sekuntda bir • oýun açylanda panel görünýär • bildirişler adaty.")
+        ULTIMATE -> lx(tm, "Ölçüm 1 sn'de bir (ping/jitter daha hızlı takip) • panel otomatik • oyunda Rahatsız Etme. Pil tüketimi biraz artar.", "Ölçeg 1 sekuntda bir • panel awtomatik • oýunda Biynjalyk etme. Batareýa sarp edilişi birneme artýar.")
     }
 
     companion object {
         fun from(key: String?): BoostProfile = values().firstOrNull { it.key == key } ?: BALANCED
         fun current(prefs: SharedPreferences): BoostProfile = from(prefs.getString(IntroPrefs.PROFILE, "balanced"))
-        /** GameBoosterService döngüsü bunu kullanır. */
         fun intervalMs(prefs: SharedPreferences): Long = current(prefs).intervalMs
     }
 }
 
-/** Arayüzün profili anında görmesi için gözlenebilir tutucu. */
 object BoostProfileHolder {
     var profile by mutableStateOf<BoostProfile?>(null)
     fun get(prefs: SharedPreferences): BoostProfile = profile ?: BoostProfile.current(prefs)
@@ -142,29 +124,20 @@ fun applyBoostProfile(prefs: SharedPreferences, p: BoostProfile) {
     BoostProfileHolder.profile = p
 }
 
-// =====================================================================
-// ZAMAN ÇİZELGESİ (ms) — animasyon, ses ve haptik aynı çizelgeyi kullanır
-// =====================================================================
-
 private class IntroTimeline(val scale: Float) {
-    val dimEnd = 320f * scale       // 1. ekran kararır
-    val dotStart = 260f * scale     // 2. mor enerji noktası
-    val growStart = 650f * scale    // 3. nokta büyür (ses yükselir)
-    val burst = 1500f * scale       // 4-5. çekirdek açılır: halkalar, dalga, parçacık + dijital darbe
-    val textStart = 1950f * scale   // 6. SUFFER SHADOW yazısı
-    val chime = 2800f * scale       // kapanış sesi
-    val fadeStart = 2950f * scale   // 7. panele geçiş
+    val dimEnd = 320f * scale
+    val dotStart = 260f * scale
+    val growStart = 650f * scale
+    val burst = 1500f * scale
+    val textStart = 1950f * scale
+    val chime = 2800f * scale
+    val fadeStart = 2950f * scale
     val total = 3450f * scale
 }
 
 private fun prog(t: Float, a: Float, b: Float): Float = ((t - a) / (b - a)).coerceIn(0f, 1f)
 private fun easeOut(x: Float): Float = 1f - (1f - x).pow(3)
 private fun easeIn(x: Float): Float = x * x * x
-
-// =====================================================================
-// SES — dosya gerektirmez, kodla üretilir; tek tampon = animasyonla tam senkron
-// =====================================================================
-
 private object BoosterSound {
     private const val RATE = 44100
 
@@ -172,8 +145,6 @@ private object BoosterSound {
         val n = ((tl.total + 350f) / 1000f * RATE).toInt()
         val buf = FloatArray(n)
         val rnd = Random(7)
-
-        // 1) Derin elektronik yükseliş (nokta görünür -> çekirdek açılır)
         val s0 = (tl.dotStart / 1000f * RATE).toInt()
         val s1 = (tl.burst / 1000f * RATE).toInt().coerceAtMost(n)
         var ph1 = 0.0
@@ -189,8 +160,6 @@ private object BoosterSound {
             lp += ((rnd.nextFloat() * 2f - 1f) - lp) * (0.02f + 0.12f * p)
             buf[i] += env * trem * (sin(ph1).toFloat() * 0.8f + sin(ph2).toFloat() * 0.25f * p) + lp * 0.22f * p * p
         }
-
-        // 2) Çekirdek açılırken güçlü ama yumuşak dijital darbe
         val pulseLen = (0.45 * RATE).toInt()
         val clickLen = RATE / 50
         var ph = 0.0
@@ -204,12 +173,10 @@ private object BoosterSound {
             if (k < clickLen) s += (rnd.nextFloat() * 2f - 1f) * 0.3f * (1f - k.toFloat() / clickLen)
             if (tt < 0.09f) {
                 val d = sin(2 * PI * 880.0 * tt).toFloat()
-                s += (round(d * 4f) / 4f) * 0.1f * (1f - tt / 0.09f) // bitcrush "dijital" doku
+                s += (round(d * 4f) / 4f) * 0.1f * (1f - tt / 0.09f)
             }
             buf[i] += s
         }
-
-        // 3) Kapanış: kısa elektronik ses
         addChime(buf, (tl.chime / 1000f * RATE).toInt())
         return toPcm(buf)
     }
@@ -239,26 +206,13 @@ private object BoosterSound {
 
     fun makeTrack(pcm: ShortArray): AudioTrack? = try {
         if (Build.VERSION.SDK_INT < 23) null else AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_GAME)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
             .setTransferMode(AudioTrack.MODE_STATIC)
             .setBufferSizeInBytes(pcm.size * 2)
             .build()
             .also { it.write(pcm, 0, pcm.size) }
-    } catch (e: Exception) {
-        null
-    }
+    } catch (e: Exception) { null }
 
     fun playChime() {
         thread(name = "boost-chime") {
@@ -269,25 +223,11 @@ private object BoosterSound {
         }
     }
 }
-
-// =====================================================================
-// ÇİZİM — enerji çekirdeği ve neon halkalar (açılış ve panel ortak kullanır)
-// =====================================================================
-
 private fun DrawScope.drawEnergyCore(c: Offset, r: Float, intensity: Float, color: Color, lite: Boolean) {
     if (r <= 0.5f) return
     val glowR = r * (if (lite) 2.0f else 2.6f)
-    drawCircle(
-        Brush.radialGradient(
-            listOf(color.copy(alpha = 0.45f * intensity), color.copy(alpha = 0.12f * intensity), Color.Transparent),
-            center = c, radius = glowR
-        ),
-        radius = glowR, center = c
-    )
-    drawCircle(
-        Brush.radialGradient(listOf(Color.White, PurpleLight, color, PurpleDeep.copy(alpha = 0f)), center = c, radius = r),
-        radius = r, center = c
-    )
+    drawCircle(Brush.radialGradient(listOf(color.copy(alpha = 0.45f * intensity), color.copy(alpha = 0.12f * intensity), Color.Transparent), center = c, radius = glowR), radius = glowR, center = c)
+    drawCircle(Brush.radialGradient(listOf(Color.White, PurpleLight, color, PurpleDeep.copy(alpha = 0f)), center = c, radius = r), radius = r, center = c)
     drawCircle(Color.White.copy(alpha = 0.85f * intensity), radius = r * 0.28f, center = c)
 }
 
@@ -315,22 +255,16 @@ private fun DrawScope.drawIntro(t: Float, tl: IntroTimeline, lite: Boolean, ps: 
     val m = min(w, h)
     val c = Offset(w / 2f, h * 0.42f)
     val s = tl.scale
-
-    // 1) Ekran hafifçe kararır
     val dim = easeOut(prog(t, 0f, tl.dimEnd))
     drawRect(Color(0xFF04050D).copy(alpha = 0.9f * dim))
     drawRect(Brush.radialGradient(listOf(Color(0xFF2A1260).copy(alpha = 0.55f * dim), Color.Transparent), center = c, radius = m * 0.9f))
     if (t < tl.dotStart) return
-
-    // 2-3) Nokta -> parlak çekirdek
     val appear = easeOut(prog(t, tl.dotStart, tl.growStart))
     val grow = easeIn(prog(t, tl.growStart, tl.burst))
     val dotR = m * 0.012f
     val maxR = m * 0.10f
     val after = prog(t, tl.burst, tl.burst + 600f * s)
     val coreR = if (t < tl.burst) dotR * appear + (maxR - dotR) * grow else maxR * (1f + 0.22f * (1f - easeOut(after)))
-
-    // Enerji toplanması: parçacıklar çekirdeğe akar
     if (!lite && t < tl.burst) {
         ps.forEachIndexed { i, p ->
             if (i % 2 == 0) {
@@ -343,33 +277,22 @@ private fun DrawScope.drawIntro(t: Float, tl: IntroTimeline, lite: Boolean, ps: 
             }
         }
     }
-
-    // 4) Neon halkalar
     val ringStart = tl.burst - 150f * s
     if (t >= ringStart) {
         val ra = easeOut(prog(t, ringStart, tl.burst + 400f * s))
         drawRings(c, maxR * (0.7f + 0.3f * ra), (t - tl.burst) * 0.18f, ra, PurpleLight, lite)
     }
-
     drawEnergyCore(c, coreR, 0.6f + 0.4f * appear, PurpleMain, lite)
-
     if (t >= tl.burst) {
-        // 5) Enerji dalgası
         val waves = if (lite) 1 else 2
         for (k in 0 until waves) {
             val e = prog(t, tl.burst + k * 140f * s, tl.burst + (700f + k * 140f) * s)
             if (e > 0f && e < 1f) {
-                drawCircle(
-                    PurpleLight.copy(alpha = (1f - e) * 0.8f),
-                    radius = maxR * (1f + 4.2f * easeOut(e)), center = c,
-                    style = Stroke(width = (7f * (1f - e) + 1f).dp.toPx())
-                )
+                drawCircle(PurpleLight.copy(alpha = (1f - e) * 0.8f), radius = maxR * (1f + 4.2f * easeOut(e)), center = c, style = Stroke(width = (7f * (1f - e) + 1f).dp.toPx()))
             }
         }
         val f = prog(t, tl.burst, tl.burst + 260f * s)
         if (f < 1f) drawCircle(Color.White.copy(alpha = 0.55f * (1f - f)), radius = maxR * (1.2f + 2f * f), center = c)
-
-        // Parçacık patlaması
         ps.forEach { p ->
             val q = prog(t, tl.burst + p.delay * 250f * s, tl.burst + (1100f + p.delay * 250f) * s)
             if (q > 0f && q < 1f) {
@@ -381,21 +304,10 @@ private fun DrawScope.drawIntro(t: Float, tl: IntroTimeline, lite: Boolean, ps: 
             }
         }
     }
-}
-
-// =====================================================================
-// AÇILIŞ KATMANI
-// =====================================================================
-
-@Composable
+}@Composable
 private fun BoosterIntro(
-    tl: IntroTimeline,
-    lite: Boolean,
-    sound: Boolean,
-    haptic: Boolean,
-    time: () -> Float,
-    onTime: (Float) -> Unit,
-    onDone: () -> Unit
+    tl: IntroTimeline, lite: Boolean, sound: Boolean, haptic: Boolean,
+    time: () -> Float, onTime: (Float) -> Unit, onDone: () -> Unit
 ) {
     val view = LocalView.current
     val particles = remember(lite) {
@@ -418,40 +330,25 @@ private fun BoosterIntro(
                 if (start < 0L) start = now
                 val t = (now - start) / 1_000_000f
                 onTime(t)
-                if (haptic && !burstDone && t >= tl.burst) {
-                    burstDone = true
-                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                }
-                if (haptic && !endDone && t >= tl.chime) {
-                    endDone = true
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                }
+                if (haptic && !burstDone && t >= tl.burst) { burstDone = true; view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) }
+                if (haptic && !endDone && t >= tl.chime) { endDone = true; view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
                 if (t >= tl.total) break
             }
-            // Normal bitiş: sesin kuyruğu kesilmesin diye biraz sonra serbest bırak
             val tr = track
             track = null
             if (tr != null) thread { Thread.sleep(700L); runCatching { tr.stop(); tr.release() } }
             onDone()
         } finally {
-            // Atlandı / kapatıldı: sesi hemen durdur
             track?.let { runCatching { it.stop(); it.release() } }
         }
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .graphicsLayer { alpha = 1f - prog(time(), tl.fadeStart, tl.total) }
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDone() } // dokununca atla
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - prog(time(), tl.fadeStart, tl.total) }
+        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDone() }
     ) {
         Canvas(Modifier.fillMaxSize()) { drawIntro(time(), tl, lite, particles) }
-
-        // 6) SUFFER SHADOW — ışık süpürmesiyle
         Column(
-            Modifier
-                .align(Alignment.Center)
-                .offset(y = 150.dp)
+            Modifier.align(Alignment.Center).offset(y = 150.dp)
                 .graphicsLayer {
                     val a = easeOut(prog(time(), tl.textStart, tl.textStart + 450f * tl.scale))
                     alpha = a
@@ -463,32 +360,19 @@ private fun BoosterIntro(
                     val p = prog(time(), tl.textStart + 250f * tl.scale, tl.textStart + 1000f * tl.scale)
                     if (p > 0f && p < 1f) {
                         val x = -size.width * 0.3f + p * size.width * 1.6f
-                                val half = 50.dp.toPx()
+                        val half = 50.dp.toPx()
                         drawRect(
-                            Brush.linearGradient(
-                                listOf(Color.Transparent, Color.White.copy(alpha = 0.9f), Color.Transparent),
-                                start = Offset(x - half, 0f), end = Offset(x + half, size.height)
-                            ),
+                            Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.9f), Color.Transparent), start = Offset(x - half, 0f), end = Offset(x + half, size.height)),
                             blendMode = BlendMode.SrcAtop
                         )
                     }
                 },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                "SUFFER SHADOW",
-                style = TextStyle(
-                    color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp,
-                    shadow = Shadow(PurpleLight, Offset.Zero, if (lite) 12f else 28f)
-                )
-            )
+            Text("SUFFER SHADOW", style = TextStyle(color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp, shadow = Shadow(PurpleLight, Offset.Zero, if (lite) 12f else 28f)))
             Spacer(Modifier.height(8.dp))
-            Box(
-                Modifier
-                    .width(220.dp)
-                    .height(2.dp)
-                    .graphicsLayer { scaleX = easeOut(prog(time(), tl.textStart + 100f * tl.scale, tl.textStart + 700f * tl.scale)) }
-                    .background(Brush.horizontalGradient(listOf(Color.Transparent, PurpleLight, Color.White, PurpleLight, Color.Transparent)))
+            Box(Modifier.width(220.dp).height(2.dp).graphicsLayer { scaleX = easeOut(prog(time(), tl.textStart + 100f * tl.scale, tl.textStart + 700f * tl.scale)) }
+                .background(Brush.horizontalGradient(listOf(Color.Transparent, PurpleLight, Color.White, PurpleLight, Color.Transparent)))
             )
             Spacer(Modifier.height(8.dp))
             Text("GAME BOOSTER", color = PurpleLight, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 6.sp)
@@ -496,18 +380,8 @@ private fun BoosterIntro(
     }
 }
 
-// =====================================================================
-// GAME BOOSTER EKRANI (tam ekran): açılış + ana panel
-// =====================================================================
-
-// DÜZELTME: 'public' yerine 'internal' yapıldı, böylece MainActivity'deki internal FeedbackType hatası çözüldü.
 @Composable
-internal fun GameBoosterScreen(
-    lang: String,
-    prefs: SharedPreferences,
-    feedback: (FeedbackType) -> Unit,
-    onClose: () -> Unit
-) {
+internal fun GameBoosterScreen(lang: String, prefs: SharedPreferences, feedback: (FeedbackType) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     var quality by remember { mutableStateOf(resolveIntroQuality(context, prefs)) }
     var introActive by remember { mutableStateOf(quality != IntroQuality.OFF) }
@@ -521,59 +395,28 @@ internal fun GameBoosterScreen(
     ) {
         val dv = LocalView.current
         SideEffect { (dv.parent as? DialogWindowProvider)?.window?.setDimAmount(0f) }
-
         Box(Modifier.fillMaxSize()) {
             BoosterPanel(
-                lang = lang,
-                prefs = prefs,
-                feedback = feedback,
-                lite = quality != IntroQuality.FULL,
-                onClose = onClose,
+                lang = lang, prefs = prefs, feedback = feedback, lite = quality != IntroQuality.FULL, onClose = onClose,
                 onReplayIntro = {
                     quality = resolveIntroQuality(context, prefs)
-                    if (quality != IntroQuality.OFF) {
-                        tState.value = 0f
-                        introRun++
-                        introActive = true
-                    }
+                    if (quality != IntroQuality.OFF) { tState.value = 0f; introRun++; introActive = true }
                 },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val a = if (!introActive) 1f else prog(tState.value, tl.fadeStart, tl.total)
-                        alpha = a
-                        scaleX = 0.95f + 0.05f * a
-                        scaleY = scaleX
-                    }
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    val a = if (!introActive) 1f else prog(tState.value, tl.fadeStart, tl.total)
+                    alpha = a; scaleX = 0.95f + 0.05f * a; scaleY = scaleX
+                }
             )
             if (introActive) {
                 key(introRun) {
-                    BoosterIntro(
-                        tl = tl,
-                        lite = quality == IntroQuality.LITE,
-                        sound = prefs.getBoolean(IntroPrefs.SOUND, true),
-                        haptic = prefs.getBoolean(IntroPrefs.HAPTIC, true),
-                        time = { tState.value },
-                        onTime = { tState.value = it },
-                        onDone = { introActive = false }
-                    )
+                    BoosterIntro(tl = tl, lite = quality == IntroQuality.LITE, sound = prefs.getBoolean(IntroPrefs.SOUND, true), haptic = prefs.getBoolean(IntroPrefs.HAPTIC, true), time = { tState.value }, onTime = { tState.value = it }, onDone = { introActive = false })
                 }
             }
         }
     }
 }
 
-// ---------------------------------------------------------------------
-// Cihaz bilgisi (servis kapalıyken de panel dolu görünsün diye doğrudan okunur)
-// ---------------------------------------------------------------------
-
-private data class QuickStats(
-    val ramPct: Int = -1,
-    val ramFreeMb: Int = -1,
-    val battPct: Int = -1,
-    val tempC: Float = -1f,
-    val charging: Boolean = false
-)
+private data class QuickStats(val ramPct: Int = -1, val ramFreeMb: Int = -1, val battPct: Int = -1, val tempC: Float = -1f, val charging: Boolean = false)
 
 private fun readQuickStats(context: Context): QuickStats = try {
     val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -587,14 +430,7 @@ private fun readQuickStats(context: Context): QuickStats = try {
     val temp = b?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
     val plugged = (b?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
     QuickStats(ramPct, free, if (lvl >= 0 && sc > 0) lvl * 100 / sc else -1, if (temp >= 0) temp / 10f else -1f, plugged)
-} catch (e: Exception) {
-    QuickStats()
-}
-
-// ---------------------------------------------------------------------
-// Panel parçaları
-// ---------------------------------------------------------------------
-
+} catch (e: Exception) { QuickStats() }
 @Composable
 private fun PanelCore(profile: BoostProfile, boosting: Boolean, lite: Boolean, modifier: Modifier = Modifier) {
     val inf = rememberInfiniteTransition()
@@ -612,13 +448,7 @@ private fun PanelCore(profile: BoostProfile, boosting: Boolean, lite: Boolean, m
 @Composable
 private fun StatTile(modifier: Modifier, label: String, value: String, sub: String, progress: Float?, color: Color) {
     val shape = RoundedCornerShape(15.dp)
-    Column(
-        modifier
-            .clip(shape)
-            .background(CardBg2)
-            .border(1.dp, color.copy(alpha = 0.28f), shape)
-            .padding(horizontal = 11.dp, vertical = 10.dp)
-    ) {
+    Column(modifier.clip(shape).background(CardBg2).border(1.dp, color.copy(alpha = 0.28f), shape).padding(horizontal = 11.dp, vertical = 10.dp)) {
         Text(label, color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1)
         Spacer(Modifier.height(3.dp))
         Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -636,11 +466,7 @@ private fun StatTile(modifier: Modifier, label: String, value: String, sub: Stri
 @Composable
 private fun FeatureCard(modifier: Modifier, icon: String, title: String, onClick: () -> Unit) {
     AnimatedSurface(modifier.height(78.dp), color = CardBg, shape = RoundedCornerShape(16.dp), onClick = onClick) {
-        Column(
-            Modifier.fillMaxSize().padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
+        Column(Modifier.fillMaxSize().padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF302052)), contentAlignment = Alignment.Center) {
                 Text(icon, color = PurpleLight, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
@@ -653,12 +479,7 @@ private fun FeatureCard(modifier: Modifier, icon: String, title: String, onClick
 @Composable
 private fun ProfileChip(modifier: Modifier, p: BoostProfile, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(15.dp)
-    AnimatedSurface(
-        modifier.height(60.dp).border(if (selected) 1.5.dp else 1.dp, if (selected) p.color else Color.White.copy(alpha = 0.08f), shape),
-        shape = shape,
-        color = if (selected) p.color.copy(alpha = 0.16f) else CardBg,
-        onClick = onClick
-    ) {
+    AnimatedSurface(modifier.height(60.dp).border(if (selected) 1.5.dp else 1.dp, if (selected) p.color else Color.White.copy(alpha = 0.08f), shape), shape = shape, color = if (selected) p.color.copy(alpha = 0.16f) else CardBg, onClick = onClick) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(p.name, color = if (selected) Color.White else TextMuted, fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
             Spacer(Modifier.height(3.dp))
@@ -667,19 +488,10 @@ private fun ProfileChip(modifier: Modifier, p: BoostProfile, selected: Boolean, 
     }
 }
 
-// ---------------------------------------------------------------------
-// ANA PANEL
-// ---------------------------------------------------------------------
-
 @Composable
 private fun BoosterPanel(
-    lang: String,
-    prefs: SharedPreferences,
-    feedback: (FeedbackType) -> Unit,
-    lite: Boolean,
-    onClose: () -> Unit,
-    onReplayIntro: () -> Unit,
-    modifier: Modifier = Modifier
+    lang: String, prefs: SharedPreferences, feedback: (FeedbackType) -> Unit, lite: Boolean,
+    onClose: () -> Unit, onReplayIntro: () -> Unit, modifier: Modifier = Modifier
 ) {
     val tm = lang == "tm"
     val context = LocalContext.current
@@ -695,23 +507,12 @@ private fun BoosterPanel(
     var showIntroSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        while (true) {
-            stats = withContext(Dispatchers.IO) { readQuickStats(context) }
-            delay(2000L)
-        }
+        while (true) { stats = withContext(Dispatchers.IO) { readQuickStats(context) }; delay(2000L) }
     }
 
     val toast: (String) -> Unit = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+    val startService: (String?) -> Unit = { action -> try { startBoosterService(context, action) } catch (e: Exception) { DebugLog.add(context, "booster start: " + e.message) } }
 
-    val startService: (String?) -> Unit = { action ->
-        try {
-            startBoosterService(context, action)
-        } catch (e: Exception) {
-            DebugLog.add(context, "booster start: " + e.message)
-        }
-    }
-
-    // BOOST ET: profili uygular, servisi açar, ağ ve cihazı gerçekten test eder
     val runBoost: () -> Unit = {
         if (!boosting) {
             feedback(FeedbackType.CONNECT)
@@ -725,7 +526,6 @@ private fun BoosterPanel(
                     applyBoostProfile(prefs, p)
                     out.add(lx(tm, "Profil uygulandı: ${p.name}", "Profil ulanyldy: ${p.name}") to AccentGreen)
                     delay(300L)
-
                     step = lx(tm, "SERVİS BAŞLATILIYOR…", "HYZMAT IŞE GOŞULÝAR…")
                     if (!BoosterState.enabled || !BoosterState.serviceRunning) {
                         BoosterState.enabled = true
@@ -737,20 +537,13 @@ private fun BoosterPanel(
                     if (p.autoOverlay && !canDrawOverlay(context)) out.add(lx(tm, "Overlay izni yok: kayan panel açılamaz", "Overlay rugsady ýok: panel açylmaýar") to Warn)
                     if (p.dnd && !hasDndAccess(context)) out.add(lx(tm, "Rahatsız Etme erişimi yok: bildirimler sessize alınamaz", "Biynjalyk etme girelgesi ýok") to Warn)
                     delay(250L)
-
                     step = lx(tm, "AĞ TESTİ…", "TOR SYNAGY…")
                     val host = prefs.getString("active_host", "") ?: ""
                     val port = prefs.getInt("active_port", 0)
                     if (host.isEmpty() || port <= 0) {
                         out.add(lx(tm, "Sunucu seçilmedi; ağ testi atlandı", "Serwer saýlanmady; tor synagy geçildi") to Warn)
                     } else {
-                        val samples = withContext(Dispatchers.IO) {
-                            List(6) {
-                                val v = pingServer(Server("", host, host, port))
-                                Thread.sleep(120L)
-                                v
-                            }
-                        }
+                        val samples = withContext(Dispatchers.IO) { List(6) { val v = pingServer(Server("", host, host, port)); Thread.sleep(120L); v } }
                         val ok = samples.filter { it >= 0 }
                         val loss = (samples.size - ok.size) * 100 / samples.size
                         if (ok.isEmpty()) {
@@ -758,15 +551,10 @@ private fun BoosterPanel(
                         } else {
                             val avg = ok.average().toInt()
                             val jit = if (ok.size < 2) 0 else ok.zipWithNext { a, b -> abs(a - b) }.average().toInt()
-                            val col = when {
-                                avg <= 120 && jit <= 30 && loss == 0 -> AccentGreen
-                                avg <= 300 && jit <= 100 && loss <= 20 -> Warn
-                                else -> RedSoft
-                            }
+                            val col = when { avg <= 120 && jit <= 30 && loss == 0 -> AccentGreen; avg <= 300 && jit <= 100 && loss <= 20 -> Warn; else -> RedSoft }
                             out.add(lx(tm, "Ağ: $avg ms • jitter $jit ms • kayıp %$loss", "Tor: $avg ms • jitter $jit ms • ýitgi %$loss") to col)
                         }
                     }
-
                     step = lx(tm, "CİHAZ KONTROLÜ…", "ENJAM BARLAGY…")
                     val s = withContext(Dispatchers.IO) { readQuickStats(context) }
                     stats = s
@@ -788,15 +576,10 @@ private fun BoosterPanel(
             }
         }
     }
-
     Column(
-        modifier
-            .background(Brush.verticalGradient(listOf(Color(0xFF1A0E40), BgDark, BgDark)))
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+        modifier.background(Brush.verticalGradient(listOf(Color(0xFF1A0E40), BgDark, BgDark))).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // ---- Başlık ----
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             NeonButton(text = "‹", modifier = Modifier.size(44.dp), onClick = { feedback(FeedbackType.TAP); onClose() }, secondary = true)
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -807,54 +590,27 @@ private fun BoosterPanel(
         }
         Spacer(Modifier.height(12.dp))
         StatusPill(
-            text = (if (BoosterState.enabled) lx(tm, "AKTİF", "IŞJEŇ") else lx(tm, "PASİF", "PASSIW")) + " • " + profile.name +
-                (if (BoosterState.gameRunning) " • " + lx(tm, "PUBG algılandı", "PUBG tapyldy") else ""),
+            text = (if (BoosterState.enabled) lx(tm, "AKTİF", "IŞJEŇ") else lx(tm, "PASİF", "PASSIW")) + " • " + profile.name + (if (BoosterState.gameRunning) " • " + lx(tm, "PUBG algılandı", "PUBG tapyldy") else ""),
             color = if (BoosterState.enabled) AccentGreen else TextMuted
         )
-
-        // ---- Enerji çekirdeği ----
         PanelCore(profile, boosting, lite, Modifier.size(230.dp))
-        Text(
-            if (BoosterState.pingAvg >= 0) "Ping ${BoosterState.pingAvg} ms" else lx(tm, "Hazır", "Taýýar"),
-            color = TextMuted, fontSize = 12.sp
-        )
+        Text(if (BoosterState.pingAvg >= 0) "Ping ${BoosterState.pingAvg} ms" else lx(tm, "Hazır", "Taýýar"), color = TextMuted, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-
-        // ---- BOOST ET ----
         val btnShape = RoundedCornerShape(20.dp)
         AnimatedSurface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(62.dp)
-                .border(1.5.dp, Brush.horizontalGradient(listOf(profile.color, PurpleLight, profile.color)), btnShape),
-            shape = btnShape,
-            brush = Brush.horizontalGradient(listOf(PurpleDeep, profile.color.copy(alpha = 0.85f), PurpleDeep)),
-            onClick = runBoost,
-            enabled = !boosting
-        ) {
-            Text(
-                if (boosting) step else "BOOST ET",
-                color = Color.White,
-                fontSize = if (boosting) 15.sp else 20.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 3.sp
-            )
-        }
-
-        // ---- Profiller ----
+            modifier = Modifier.fillMaxWidth().height(62.dp).border(1.5.dp, Brush.horizontalGradient(listOf(profile.color, PurpleLight, profile.color)), btnShape),
+            shape = btnShape, brush = Brush.horizontalGradient(listOf(PurpleDeep, profile.color.copy(alpha = 0.85f), PurpleDeep)), onClick = runBoost, enabled = !boosting
+        ) { Text(if (boosting) step else "BOOST ET", color = Color.White, fontSize = if (boosting) 15.sp else 20.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 3.sp) }
+        
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
             BoostProfile.values().forEach { p ->
-                ProfileChip(Modifier.weight(1f), p, p == profile) {
-                    feedback(FeedbackType.TAP)
-                    applyBoostProfile(prefs, p)
-                }
+                ProfileChip(Modifier.weight(1f), p, p == profile) { feedback(FeedbackType.TAP); applyBoostProfile(prefs, p) }
             }
         }
         Spacer(Modifier.height(8.dp))
         Text(profile.desc(tm), color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp, textAlign = TextAlign.Center)
 
-        // ---- Boost sonucu ----
         if (report.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
             GameCard {
@@ -869,84 +625,37 @@ private fun BoosterPanel(
             }
         }
 
-        // ---- Cihaz ve ağ bilgileri ----
         Spacer(Modifier.height(16.dp))
         val cpu = BoosterState.cpuPct
         val connected = VpnState.status == VpnState.CONNECTED
-        val temp        val tempCol = when {
-            stats.tempC >= 42f -> RedSoft
-            stats.tempC >= 38f -> Warn
-            else -> AccentGreen
-        }
+        val tempCol = when { stats.tempC >= 42f -> RedSoft; stats.tempC >= 38f -> Warn; else -> AccentGreen }
+        
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile(
-                Modifier.weight(1f), "CPU",
-                if (cpu >= 0) "%$cpu" else if (BoosterState.serviceRunning) lx(tm, "Kısıtlı", "Çäkli") else "—",
-                if (cpu >= 0) lx(tm, "kullanım", "ulanyş") else lx(tm, "sistem izin vermez", "ulgam rugsat bermeýär"),
-                if (cpu >= 0) cpu / 100f else null, PurpleLight
-            )
-            StatTile(
-                Modifier.weight(1f), "RAM",
-                if (stats.ramPct >= 0) "%${stats.ramPct}" else "—",
-                if (stats.ramFreeMb >= 0) lx(tm, "boş ${stats.ramFreeMb} MB", "boş ${stats.ramFreeMb} MB") else "—",
-                if (stats.ramPct >= 0) stats.ramPct / 100f else null,
-                if (stats.ramPct >= 85) Warn else PurpleLight
-            )
-            StatTile(
-                Modifier.weight(1f), lx(tm, "SICAKLIK", "GYZGYNLYK"),
-                if (stats.tempC >= 0f) fmtTemp(stats.tempC) else "—",
-                when {
-                    stats.tempC < 0f -> "—"
-                    stats.tempC >= 42f -> lx(tm, "sıcak", "gyzgyn")
-                    stats.tempC >= 38f -> lx(tm, "ılık", "ýyly")
-                    else -> lx(tm, "normal", "adaty")
-                },
-                if (stats.tempC >= 0f) (stats.tempC / 50f) else null, tempCol
-            )
+            StatTile(Modifier.weight(1f), "CPU", if (cpu >= 0) "%$cpu" else if (BoosterState.serviceRunning) lx(tm, "Kısıtlı", "Çäkli") else "—", if (cpu >= 0) lx(tm, "kullanım", "ulanyş") else lx(tm, "sistem izin vermez", "ulgam rugsat bermeýär"), if (cpu >= 0) cpu / 100f else null, PurpleLight)
+            StatTile(Modifier.weight(1f), "RAM", if (stats.ramPct >= 0) "%${stats.ramPct}" else "—", if (stats.ramFreeMb >= 0) lx(tm, "boş ${stats.ramFreeMb} MB", "boş ${stats.ramFreeMb} MB") else "—", if (stats.ramPct >= 0) stats.ramPct / 100f else null, if (stats.ramPct >= 85) Warn else PurpleLight)
+            StatTile(Modifier.weight(1f), lx(tm, "SICAKLIK", "GYZGYNLYK"), if (stats.tempC >= 0f) fmtTemp(stats.tempC) else "—", when { stats.tempC < 0f -> "—"; stats.tempC >= 42f -> lx(tm, "sıcak", "gyzgyn"); stats.tempC >= 38f -> lx(tm, "ılık", "ýyly"); else -> lx(tm, "normal", "adaty") }, if (stats.tempC >= 0f) (stats.tempC / 50f) else null, tempCol)
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile(
-                Modifier.weight(1f), lx(tm, "PİL", "BATAREÝA"),
-                if (stats.battPct >= 0) "%${stats.battPct}" else "—",
-                if (stats.charging) lx(tm, "şarj oluyor", "zarýad alýar") else lx(tm, "pil", "batareýa"),
-                if (stats.battPct >= 0) stats.battPct / 100f else null,
-                if (stats.battPct in 0..20 && !stats.charging) Warn else AccentGreen
-            )
-            StatTile(
-                Modifier.weight(1f), "PING",
-                if (BoosterState.pingAvg >= 0) "${BoosterState.pingAvg} ms" else "—",
-                if (BoosterState.pingAvg >= 0) "±${BoosterState.jitterMs} • %${BoosterState.lossPct}"
-                else if (BoosterState.serviceRunning) lx(tm, "sunucu yok", "serwer ýok") else lx(tm, "servis kapalı", "hyzmat ýapyk"),
-                null, PurpleLight
-            )
-            StatTile(
-                Modifier.weight(1f), lx(tm, "AĞ", "TOR"),
-                if (connected && VpnState.speedSupported) "↓ " + fmtRate(VpnState.rxBps) else "—",
-                if (connected && VpnState.speedSupported) "↑ " + fmtRate(VpnState.txBps) else lx(tm, "VPN kapalı", "VPN ýapyk"),
-                null, PurpleLight
-            )
+            StatTile(Modifier.weight(1f), lx(tm, "PİL", "BATAREÝA"), if (stats.battPct >= 0) "%${stats.battPct}" else "—", if (stats.charging) lx(tm, "şarj oluyor", "zarýad alýar") else lx(tm, "pil", "batareýa"), if (stats.battPct >= 0) stats.battPct / 100f else null, if (stats.battPct in 0..20 && !stats.charging) Warn else AccentGreen)
+            StatTile(Modifier.weight(1f), "PING", if (BoosterState.pingAvg >= 0) "${BoosterState.pingAvg} ms" else "—", if (BoosterState.pingAvg >= 0) "±${BoosterState.jitterMs} • %${BoosterState.lossPct}" else if (BoosterState.serviceRunning) lx(tm, "sunucu yok", "serwer ýok") else lx(tm, "servis kapalı", "hyzmat ýapyk"), null, PurpleLight)
+            StatTile(Modifier.weight(1f), lx(tm, "AĞ", "TOR"), if (connected && VpnState.speedSupported) "↓ " + fmtRate(VpnState.rxBps) else "—", if (connected && VpnState.speedSupported) "↑ " + fmtRate(VpnState.txBps) else lx(tm, "VPN kapalı", "VPN ýapyk"), null, PurpleLight)
         }
 
-        // ---- Servis anahtarı ----
         Spacer(Modifier.height(12.dp))
         AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(horizontal = 14.dp)) {
                 PreferenceSwitchRow(
-                    title = lx(tm, "Game Booster servisi", "Game Booster hyzmaty"),
-                    subtitle = lx(tm, "Kapatınca yalnızca oyun modu ve panel kapanır; VPN kesilmez.", "Ýapanyňyzda diňe oýun modi we panel ýapylýar; VPN üzülmeýär."),
+                    title = lx(tm, "Game Booster servisi", "Game Booster hyzmaty"), subtitle = lx(tm, "Kapatınca yalnızca oyun modu ve panel kapanır; VPN kesilmez.", "Ýapanyňyzda diňe oýun modi we panel ýapylýar; VPN üzülmeýär."),
                     checked = BoosterState.enabled,
                     onCheckedChange = { on ->
-                        feedback(FeedbackType.TAP)
-                        BoosterState.enabled = on
-                        prefs.edit().putBoolean(BoosterPrefs.ENABLED, on).apply()
+                        feedback(FeedbackType.TAP); BoosterState.enabled = on; prefs.edit().putBoolean(BoosterPrefs.ENABLED, on).apply()
                         if (on) startService(null) else stopBoosterService(context)
                     }
                 )
             }
         }
 
-        // ---- Diğer özellikler ----
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FeatureCard(Modifier.weight(1f), "▶", lx(tm, "PUBG Başlat", "PUBG aç")) {
@@ -967,11 +676,7 @@ private fun BoosterPanel(
                 }
             }
             FeatureCard(Modifier.weight(1f), "☰", lx(tm, "Sunucular", "Serwerler")) {
-                feedback(FeedbackType.TAP)
-                NavRequest.tab = 0
-                NavRequest.servers = true
-                NavRequest.seq++
-                onClose()
+                feedback(FeedbackType.TAP); NavRequest.tab = 0; NavRequest.servers = true; NavRequest.seq++; onClose()
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -983,9 +688,7 @@ private fun BoosterPanel(
 
         Spacer(Modifier.height(14.dp))
         Text(
-            lx(tm,
-                "BOOST ET; seçili profili uygular, Game Booster servisini başlatır, seçili sunucuya ağ testi yapar ve cihaz durumunu kontrol eder. Android, uygulamalara CPU/GPU hızını değiştirme veya diğer uygulamaları zorla kapatma izni vermez; bu ekran bunları taklit etmez.",
-                "BOOST ET saýlanan profili ulanýar, hyzmaty işe goşýar, serwere tor synagyny geçirýär we enjamy barlaýar. Android programmalara CPU/GPU tizligini üýtgetmäge ýa-da beýleki programmalary mejbury ýapmaga rugsat bermeýär; bu ekran olary öýkünmeýär."),
+            lx(tm, "BOOST ET; seçili profili uygular, Game Booster servisini başlatır, seçili sunucuya ağ testi yapar ve cihaz durumunu kontrol eder. Android, uygulamalara CPU/GPU hızını değiştirme veya diğer uygulamaları zorla kapatma izni vermez; bu ekran bunları taklit etmez.", "BOOST ET saýlanan profili ulanýar, hyzmaty işe goşýar, serwere tor synagyny geçirýär we enjamy barlaýar. Android programmalara CPU/GPU tizligini üýtgetmäge ýa-da beýleki programmalary mejbury ýapmaga rugsat bermeýär; bu ekran olary öýkünmeýär."),
             color = TextMuted, fontSize = 10.sp, lineHeight = 14.sp, textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(20.dp))
@@ -993,13 +696,7 @@ private fun BoosterPanel(
 
     if (showPerms) {
         Dialog(onDismissRequest = { showPerms = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .background(BgDark)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp)
-            ) {
+            Column(Modifier.fillMaxSize().background(BgDark).verticalScroll(rememberScrollState()).padding(16.dp)) {
                 NeonButton(text = lx(tm, "‹ Geri", "‹ Yza"), modifier = Modifier.fillMaxWidth(), onClick = { showPerms = false }, secondary = true)
                 Spacer(Modifier.height(12.dp))
                 BoosterHeroCard(lang = lang, prefs = prefs, feedback = feedback)
@@ -1008,55 +705,26 @@ private fun BoosterPanel(
     }
 
     if (showIntroSettings) {
-        IntroSettingsDialog(
-            tm = tm,
-            prefs = prefs,
-            feedback = feedback,
-            onReplay = { showIntroSettings = false; onReplayIntro() },
-            onDismiss = { showIntroSettings = false }
-        )
+        IntroSettingsDialog(tm = tm, prefs = prefs, feedback = feedback, onReplay = { showIntroSettings = false; onReplayIntro() }, onDismiss = { showIntroSettings = false })
     }
 }
 
 private fun fmtTemp(c: Float): String = String.format(Locale.US, "%.1f°C", c)
 
 @Composable
-private fun IntroSettingsDialog(
-    tm: Boolean,
-    prefs: SharedPreferences,
-    feedback: (FeedbackType) -> Unit,
-    onReplay: () -> Unit,
-    onDismiss: () -> Unit
-) {
+private fun IntroSettingsDialog(tm: Boolean, prefs: SharedPreferences, feedback: (FeedbackType) -> Unit, onReplay: () -> Unit, onDismiss: () -> Unit) {
     var sound by remember { mutableStateOf(prefs.getBoolean(IntroPrefs.SOUND, true)) }
     var haptic by remember { mutableStateOf(prefs.getBoolean(IntroPrefs.HAPTIC, true)) }
     var quality by remember { mutableStateOf(prefs.getString(IntroPrefs.QUALITY, "auto") ?: "auto") }
-    val setQ: (String) -> Unit = { q ->
-        feedback(FeedbackType.TAP)
-        quality = q
-        prefs.edit().putString(IntroPrefs.QUALITY, q).apply()
-    }
+    val setQ: (String) -> Unit = { q -> feedback(FeedbackType.TAP); quality = q; prefs.edit().putString(IntroPrefs.QUALITY, q).apply() }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = CardBg,
-        titleContentColor = Color.White,
-        textContentColor = TextMuted,
+        onDismissRequest = onDismiss, containerColor = CardBg, titleContentColor = Color.White, textContentColor = TextMuted,
         title = { Text(lx(tm, "Açılış ve efektler", "Açylyş we effektler"), fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                PreferenceSwitchRow(
-                    title = lx(tm, "Sesler", "Sesler"),
-                    subtitle = lx(tm, "Açılış ve BOOST sesleri", "Açylyş we BOOST sesleri"),
-                    checked = sound,
-                    onCheckedChange = { feedback(FeedbackType.TAP); sound = it; prefs.edit().putBoolean(IntroPrefs.SOUND, it).apply() }
-                )
-                PreferenceSwitchRow(
-                    title = lx(tm, "Titreşim", "Titreme"),
-                    subtitle = lx(tm, "Çekirdek açılınca ve bitişte", "Özen açylanda we soňunda"),
-                    checked = haptic,
-                    onCheckedChange = { feedback(FeedbackType.TAP); haptic = it; prefs.edit().putBoolean(IntroPrefs.HAPTIC, it).apply() }
-                )
+                PreferenceSwitchRow(title = lx(tm, "Sesler", "Sesler"), subtitle = lx(tm, "Açılış ve BOOST sesleri", "Açylyş we BOOST sesleri"), checked = sound, onCheckedChange = { feedback(FeedbackType.TAP); sound = it; prefs.edit().putBoolean(IntroPrefs.SOUND, it).apply() })
+                PreferenceSwitchRow(title = lx(tm, "Titreşim", "Titreme"), subtitle = lx(tm, "Çekirdek açılınca ve bitişte", "Özen açylanda we soňunda"), checked = haptic, onCheckedChange = { feedback(FeedbackType.TAP); haptic = it; prefs.edit().putBoolean(IntroPrefs.HAPTIC, it).apply() })
                 Spacer(Modifier.height(6.dp))
                 Text(lx(tm, "Animasyon kalitesi", "Animasiýa hili"), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
@@ -1069,29 +737,12 @@ private fun IntroSettingsDialog(
                     NeonButton(lx(tm, "Hafif", "Ýeňil"), Modifier.weight(1f), onClick = { setQ("lite") }, secondary = quality != "lite")
                     NeonButton(lx(tm, "Kapalı", "Ýapyk"), Modifier.weight(1f), onClick = { setQ("off") }, secondary = quality != "off")
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    lx(tm,
-                        "Otomatik: zayıf cihazlarda ve ECO profilinde hafif mod; sistemde animasyonlar kapalıysa açılış atlanır. Açılışa dokunarak da geçebilirsin.",
-                        "Awtomatik: gowşak enjamlarda we ECO-da ýeňil režim; ulgamda animasiýalar ýapyk bolsa açylyş geçilýär. Açylyşa basyp hem geçip bilersiňiz."),
-                    fontSize = 10.sp, lineHeight = 14.sp
-                )
             }
         },
-        confirmButton = {
-            TextButton(onClick = { feedback(FeedbackType.TAP); onReplay() }) {
-                Text(lx(tm, "Önizle", "Synap gör"), color = PurpleLight, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(lx(tm, "Kapat", "Ýap"), color = TextMuted) }
-        }
+        confirmButton = { TextButton(onClick = { feedback(FeedbackType.TAP); onReplay() }) { Text(lx(tm, "Önizle", "Synap gör"), color = PurpleLight, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(lx(tm, "Kapat", "Ýap"), color = TextMuted) } }
     )
 }
-
-// =====================================================================
-// Oyun sekmesindeki giriş kartı (eski BoosterHeroCard yerine)
-// =====================================================================
 
 @Composable
 internal fun BoosterEntryCard(lang: String, prefs: SharedPreferences, onOpen: () -> Unit) {
@@ -1099,13 +750,8 @@ internal fun BoosterEntryCard(lang: String, prefs: SharedPreferences, onOpen: ()
     val profile = BoostProfileHolder.get(prefs)
     val shape = RoundedCornerShape(24.dp)
     AnimatedSurface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.5.dp, Brush.linearGradient(listOf(PurpleLight, PurpleMain, profile.color)), shape),
-        shape = shape,
-        brush = Brush.verticalGradient(listOf(Color(0xFF2A1260), Color(0xFF160C36), Color(0xFF0E1124))),
-        onClick = onOpen,
-        contentAlignment = Alignment.TopStart
+        modifier = Modifier.fillMaxWidth().border(1.5.dp, Brush.linearGradient(listOf(PurpleLight, PurpleMain, profile.color)), shape),
+        shape = shape, brush = Brush.verticalGradient(listOf(Color(0xFF2A1260), Color(0xFF160C36), Color(0xFF0E1124))), onClick = onOpen, contentAlignment = Alignment.TopStart
     ) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             PanelCore(profile, false, true, Modifier.size(84.dp))
@@ -1113,10 +759,7 @@ internal fun BoosterEntryCard(lang: String, prefs: SharedPreferences, onOpen: ()
             Column(Modifier.weight(1f)) {
                 Text("GAME BOOSTER", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    (if (BoosterState.enabled) lx(tm, "Aktif", "Işjeň") else lx(tm, "Pasif", "Passiw")) + " • " + profile.name,
-                    color = if (BoosterState.enabled) AccentGreen else TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold
-                )
+                Text((if (BoosterState.enabled) lx(tm, "Aktif", "Işjeň") else lx(tm, "Pasif", "Passiw")) + " • " + profile.name, color = if (BoosterState.enabled) AccentGreen else TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Text(lx(tm, "Açmak için dokun", "Açmak üçin basyň"), color = PurpleLight, fontSize = 11.sp)
             }
             Text("›", color = PurpleLight, fontSize = 34.sp, fontWeight = FontWeight.Light)
