@@ -15,8 +15,7 @@
     <!-- Game Booster: oyun sırasında bildirimleri sessize alma (Rahatsız Etme erişimi, kullanıcı Ayarlar'dan verir) -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
-    <!-- Paket görünürlüğü (Android 11+): başlatılabilir uygulamalar + desteklenen PUBG paketleri.
-         Yeni bölgesel sürüm eklenirse GameBooster.kt > PUBG_PACKAGES ve buraya paket adı eklenir. -->
+    <!-- Paket görünürlüğü (Android 11+): başlatılabilir uygulamalar + desteklenen PUBG paketleri. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -32,11 +31,12 @@
     </queries>
 
     <application
-    android:allowBackup="true"
-    android:label="Suffer Shadow"
-    android:icon="@mipmap/ic_launcher"
-    android:roundIcon="@mipmap/ic_launcher"
-    android:theme="@android:style/Theme.Material.NoActionBar">
+        android:allowBackup="true"
+        android:label="Suffer Shadow"
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -59,6 +59,6 @@
         <service
             android:name=".GameBoosterService"
             android:exported="false" />
+            
     </application>
 </manifest>
-
