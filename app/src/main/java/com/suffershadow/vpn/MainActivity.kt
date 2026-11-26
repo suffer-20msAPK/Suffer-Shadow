@@ -954,12 +954,14 @@ private fun ServersTab(
 }
 @Composable
 private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
-    var isLoggedIn by remember { mutableStateOf(false) }
-    var phoneId by remember { mutableStateOf("") }
+    // Hafızadan giriş durumunu oku (Eğer daha önce giriş yaptıysa true gelir)
+    var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
+    var phoneId by remember { mutableStateOf(prefs.getString("logged_in_phone", "") ?: "") }
     var showAuthDialog by remember { mutableStateOf(false) }
     var isRegisterMode by remember { mutableStateOf(false) }
 
     if (!isLoggedIn) {
+        // GİRİŞ YAPILMAMIŞSA
         Column(
             Modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -989,6 +991,7 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             )
         }
     } else {
+        // GİRİŞ YAPILMIŞSA (Profil Ekranı)
         val uriHandler = LocalUriHandler.current
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1012,6 +1015,50 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
                         buttonText = "Mesaj", buttonColor = Color(0xFF229ED9),
                         onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_pubg") } }
                     )
+                    SocialMediaRow(
+                        icon = "📢", title = "Telegram Kanalımız", 
+                        buttonText = "Abone Ol", buttonColor = Color(0xFF229ED9),
+                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffervpn") } }
+                    )
+                    SocialMediaRow(
+                        icon = "💬", title = "Telegram Sohbetimiz", 
+                        buttonText = "Katıl", buttonColor = Color(0xFF229ED9),
+                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_chat") } }
+                    )
+                }
+            }
+            
+            Spacer(Modifier.height(30.dp))
+            
+            NeonButton(
+                text = "Çıkış Yap",
+                modifier = Modifier.fillMaxWidth(),
+                secondary = true,
+                onClick = { 
+                    feedback(FeedbackType.TAP)
+                    isLoggedIn = false
+                    phoneId = ""
+                    // Çıkış yapınca hafızayı temizle
+                    prefs.edit().putBoolean("is_logged_in", false).putString("logged_in_phone", "").apply()
+                }
+            )
+        }
+    }
+
+    if (showAuthDialog) {
+        AuthDialog(
+            isRegister = isRegisterMode,
+            onDismiss = { showAuthDialog = false },
+            onSuccess = { id ->
+                phoneId = id
+                isLoggedIn = true
+                // Giriş başarılı olunca hafızaya kaydet
+                prefs.edit().putBoolean("is_logged_in", true).putString("logged_in_phone", id).apply()
+                showAuthDialog = false
+            }
+        )
+    }
+}
 @Composable
 private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
     // Hafızadan giriş durumunu oku (Eğer daha önce giriş yaptıysa true gelir)
