@@ -2,6 +2,7 @@
 
 package com.suffershadow.vpn
 
+import androidx.compose.foundation.layout.wrapContentHeight
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
