@@ -147,6 +147,10 @@ data class Server(
 )
 fun parseServer(raw: String, isBuiltIn: Boolean = false, category: String = "custom"): Server? {
     val link = raw.trim()
+    
+    // Abonelik linkleri HTTP/HTTPS ile başlar, bunları burada reddet.
+    if (link.startsWith("http://") || link.startsWith("https://")) return null 
+
     return try {
         val name = if (link.contains("#")) URLDecoder.decode(link.substringAfter("#"), "UTF-8") else ""
         val body = link.substringBefore("#")
@@ -171,6 +175,48 @@ fun parseServer(raw: String, isBuiltIn: Boolean = false, category: String = "cus
         if (host.isEmpty() || port !in 1..65535) null else Server(link, name.ifEmpty { host }, host, port, isBuiltIn, category)
     } catch (_: Exception) {
         null
+    }
+}
+
+// Gelişmiş Abonelik İndirici (Türkmenistan gibi sansürlü ağlarda çalışması için)
+fun fetchSubscriptionServers(url: String, onResult: (List<Server>) -> Unit) {
+    thread {
+        val list = mutableListOf<Server>()
+        var responseText: String? = null
+
+        val userAgents = listOf(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Happ/1.0", "SufferShadow/1.0", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"
+        )
+
+        for (ua in userAgents) {
+            if (responseText != null) break
+            try {
+                val conn = java.net.URL(url).openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000; conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", ua)
+                conn.setRequestProperty("Accept", "*/*")
+                conn.instanceFollowRedirects = true
+                if (conn.responseCode in 200..299) {
+                    responseText = conn.inputStream.bufferedReader().use { it.readText() }
+                }
+                conn.disconnect()
+            } catch (e: Exception) { }
+        }
+
+        if (responseText != null) {
+            val decodedText = try {
+                String(Base64.decode(responseText.trim(), Base64.DEFAULT))
+            } catch (e: Exception) { responseText }
+
+            decodedText.lines().forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.isNotEmpty()) {
+                    parseServer(trimmed, isBuiltIn = false, category = "custom")?.let { list.add(it) }
+                }
+            }
+        }
+        Handler(Looper.getMainLooper()).post { onResult(list) }
     }
 }
 
@@ -237,7 +283,6 @@ private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Col
         }
     }
 }
-
 @Composable
 private fun rememberUiFeedback(soundEnabled: Boolean, vibrationEnabled: Boolean): (FeedbackType) -> Unit {
     val haptic = LocalHapticFeedback.current
@@ -286,6 +331,7 @@ fun rememberVpnConnect(): (Server) -> Unit {
         }
     }
 }
+
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
@@ -390,11 +436,10 @@ fun AppRoot() {
             vpnTimeLeft = 7200
         }
     }
-
     val connect = rememberVpnConnect()
-    val allServers = servers + builtInSocial + builtInPubg
-    val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
-    val save: () -> Unit = {
+val allServers = servers + builtInSocial + builtInPubg
+val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
+val save: () -> Unit = {
     prefs.edit()
         .putString("links", servers.joinToString("\n") { it.link })
         .putInt("sel", selected)
@@ -494,20 +539,40 @@ val onAdd: () -> Unit = {
     feedback(FeedbackType.TAP)
     var added = 0
     input.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
-        val server = parseServer(line, isBuiltIn = false)
-        if (server != null && servers.none { it.link == server.link }) {
-            servers.add(server)
-            measure(server)
-            added++
+        if (line.startsWith("http://") || line.startsWith("https://")) {
+            fetchSubscriptionServers(line) { fetchedList ->
+                var subAdded = 0
+                fetchedList.forEach { srv ->
+                    if (servers.none { it.link == srv.link }) {
+                        servers.add(srv)
+                        measure(srv)
+                        subAdded++
+                    }
+                }
+                if (subAdded > 0) {
+                    save()
+                    message = if (lang == "tm") "$subAdded serwer goşuldy (Abonelik)" else "$subAdded sunucu eklendi (Abonelik)"
+                } else {
+                    message = if (lang == "tm") "Abonelik boş" else "Abonelik boş veya zaten ekli."
+                }
+            }
+        } else {
+            val server = parseServer(line, isBuiltIn = false)
+            if (server != null && servers.none { it.link == server.link }) {
+                servers.add(server)
+                measure(server)
+                added++
+            }
         }
     }
     if (added > 0) {
         input = ""
         save()
         message = if (lang == "tm") "$added serwer goşuldy" else "$added sunucu eklendi"
-    } else {
-        message = if (lang == "tm") "Goşup bolmady. Diňe goldanýan VLESS/SS linklerini barla." else "Eklenemedi. Desteklenen VLESS/SS bağlantılarını kontrol et."
+    } else if (!input.contains("http")) {
+        message = if (lang == "tm") "Goşup bolmady." else "Eklenemedi."
     }
+    input = ""
 }
 
 val switchToServer: (Server) -> Unit = { target ->
@@ -542,30 +607,29 @@ gameState.backup?.let { b ->
         onDismiss = { gameState.backupDismissedFor = current?.link; gameState.backup = null }
     )
 }
+    if (sessionExpired) {
+        AlertDialog(
+            onDismissRequest = { sessionExpired = false },
+            containerColor = CardBg,
+            titleContentColor = Color.White,
+            textContentColor = TextMuted,
+            title = { Text(if (lang == "tm") "Wagt gutardy" else "Süre doldu", fontWeight = FontWeight.Bold) },
+            text = { Text(if (lang == "tm") "2 sagatlyk sessiýa gutardy we VPN ýapyldy. Gaýtadan birikseňiz täze sessiýa başlanar." else "2 saatlik oturum doldu ve VPN kapatıldı. Yeniden bağlanırsan yeni oturum başlar.") },
+            confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
+        )
+    }
 
-if (sessionExpired) {
-    AlertDialog(
-        onDismissRequest = { sessionExpired = false },
-        containerColor = CardBg,
-        titleContentColor = Color.White,
-        textContentColor = TextMuted,
-        title = { Text(if (lang == "tm") "Wagt gutardy" else "Süre doldu", fontWeight = FontWeight.Bold) },
-        text = { Text(if (lang == "tm") "2 sagatlyk sessiýa gutardy we VPN ýapyldy. Gaýtadan birikseňiz täze sessiýa başlanar." else "2 saatlik oturum doldu ve VPN kapatıldı. Yeniden bağlanırsan yeni oturum başlar.") },
-        confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
-    )
-}
-
-if (showVipScreen) {
-    VipScreen(
-        prefs = prefs,
-        onVipActivated = {
-            isVipUser = true
-            showVipScreen = false
-        },
-        onDismiss = { showVipScreen = false }
-    )
-    return
-}
+    if (showVipScreen) {
+        VipScreen(
+            prefs = prefs,
+            onVipActivated = {
+                isVipUser = true
+                showVipScreen = false
+            },
+            onDismiss = { showVipScreen = false }
+        )
+        return
+    }
     Scaffold(
         containerColor = BgDark,
         contentColor = Color.White,
@@ -635,6 +699,7 @@ if (showVipScreen) {
                     },
                     onOpenServers = { feedback(FeedbackType.TAP); showServers = true }
                 )
+                // YENİ: onAddSubscription eklendi
                 tab == 0 && showServers -> ServersTab(
                     lang = lang,
                     customServers = servers,
@@ -645,7 +710,24 @@ if (showVipScreen) {
                     onSelect = onSelect,
                     onDelete = onDelete,
                     onRefresh = { feedback(FeedbackType.TAP); loadRemoteData(); servers.forEach { measure(it) } },
-                    onBack = { feedback(FeedbackType.TAP); showServers = false }
+                    onBack = { feedback(FeedbackType.TAP); showServers = false },
+                    onAddSubscription = { subUrl ->
+                        feedback(FeedbackType.CONNECT)
+                        fetchSubscriptionServers(subUrl) { fetchedList ->
+                            if (fetchedList.isNotEmpty()) {
+                                fetchedList.forEach { srv ->
+                                    if (servers.none { it.link == srv.link }) {
+                                        servers.add(srv)
+                                        measure(srv)
+                                    }
+                                }
+                                save()
+                                message = if (lang == "tm") "${fetchedList.size} serwer goşuldy" else "${fetchedList.size} sunucu eklendi"
+                            } else {
+                                message = if (lang == "tm") "Abonelikden serwer tapylmady" else "Abonelikten sunucu okunamadı."
+                            }
+                        }
+                    }
                 )
                 tab == 1 -> GameToolsTab(
                     lang = lang,
@@ -847,13 +929,16 @@ private fun ServersTab(
     onSelect: (Int) -> Unit,
     onDelete: (Int) -> Unit,
     onRefresh: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onAddSubscription: (String) -> Unit // YENİ EKLENDİ
 ) {
     val tm = lang == "tm"
     val connected = VpnState.status == VpnState.CONNECTED
     
-    var mainTab by remember { mutableStateOf(0) }
-    var categoryTab by remember { mutableStateOf(0) }
+    var mainTab by remember { mutableStateOf(0) } // 0: İçindekiler, 1: Özel
+    var categoryTab by remember { mutableStateOf(0) } // 0: Sosyal, 1: PUBG
+    var subUrlInput by remember { mutableStateOf("") }
+    var showSubDialog by remember { mutableStateOf(false) }
 
     val currentList = when {
         mainTab == 1 -> customServers
@@ -873,7 +958,22 @@ private fun ServersTab(
             Spacer(Modifier.weight(1f))
             Text(if (tm) "Serwerler" else "Sunucular", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Spacer(Modifier.weight(1f))
-            NeonButton(text = if (tm) "Test et" else "Test Et", onClick = onRefresh, secondary = true)
+            
+            // YENİ: Güncelle ve Test Et Butonları (Yan Yana)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                NeonButton(
+                    text = "🔄", 
+                    modifier = Modifier.size(44.dp),
+                    onClick = onRefresh, 
+                    secondary = true
+                )
+                NeonButton(
+                    text = "⚡", 
+                    modifier = Modifier.size(44.dp),
+                    onClick = { onRefresh() }, 
+                    secondary = true
+                )
+            }
         }
 
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -908,6 +1008,18 @@ private fun ServersTab(
             }
         }
 
+        // YENİ: Özel Sekmesi İçin Abonelik Ekleme Butonu
+        if (mainTab == 1) {
+            Spacer(Modifier.height(8.dp))
+            NeonButton(
+                text = if (tm) "Abonelik Linki Ekle" else "Abonelik Linki Ekle",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { showSubDialog = true },
+                secondary = true
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
         if (currentList.isEmpty()) {
             AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
                 Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -915,7 +1027,7 @@ private fun ServersTab(
                     Text(if (tm) "Serwer ýok" else "Henüz sunucu yok", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
                         if (mainTab == 0) (if(tm) "Uzakdan kodlar ýüklenýär..." else "Uzaktan sunucular yükleniyor veya henüz eklenmedi.")
-                        else (if (tm) "Oýun bölüminden link goşuň." else "Oyun sekmesinden bağlantı ekleyin."), 
+                        else (if (tm) "Aşakdan abonelik goşuň." else "Yukarıdan abonelik linki ekleyin."), 
                         color = TextMuted, fontSize = 13.sp, textAlign = TextAlign.Center
                     )
                 }
@@ -960,6 +1072,40 @@ private fun ServersTab(
                 }
             }
         }
+    }
+
+    // YENİ: Abonelik Ekleme Diyaloğu
+    if (showSubDialog) {
+        AlertDialog(
+            onDismissRequest = { showSubDialog = false },
+            containerColor = CardBg,
+            title = { Text("Abonelik Linki", color = Color.White) },
+            text = {
+                OutlinedTextField(
+                    value = subUrlInput,
+                    onValueChange = { subUrlInput = it },
+                    placeholder = { Text("https://.../sub/...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (subUrlInput.isNotBlank()) {
+                        onAddSubscription(subUrlInput.trim())
+                        subUrlInput = ""
+                        showSubDialog = false
+                    }
+                }) {
+                    Text("Ekle", color = PurpleLight, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSubDialog = false }) {
+                    Text("Vazgeç", color = TextMuted)
+                }
+            }
+        )
     }
 }
 @Composable
@@ -1337,7 +1483,6 @@ internal fun AnimatedSurface(
         content = content
     )
 }
-
 @Composable
 private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) {
     androidx.compose.foundation.Canvas(modifier) {
@@ -1436,6 +1581,7 @@ fun SufferShadowTheme(content: @Composable () -> Unit) {
         content = content
     )
 }
+
 object GamePrefs {
     const val BLOCK_BACKGROUND = "gm_block_bg"
     const val PRIORITIZE_GAME = "gm_priority"
@@ -1534,7 +1680,6 @@ private fun GameToolsTab(
     var showBoosterScreen by remember { mutableStateOf(false) }
 
     if (showBoosterScreen) {
-        // Senin BoosterIntro.kt içindeki mükemmel animasyonlu ekran
         GameBoosterScreen(
             lang = lang,
             prefs = prefs,
@@ -1566,7 +1711,6 @@ private fun GameToolsTab(
         
         Spacer(Modifier.height(24.dp))
 
-        // Game Booster Kartı (onOpen parametresi kaldırıldı)
         BoosterHeroCard(
             lang = lang,
             prefs = prefs,
@@ -1575,7 +1719,6 @@ private fun GameToolsTab(
 
         Spacer(Modifier.height(16.dp))
 
-        // Animasyonlu Game Booster Ekranını Açan Butonumuz
         NeonButton(
             text = if (tm) "GAME BOOSTER PANELINI AÇ" else "GAME BOOSTER PANELİNİ AÇ",
             modifier = Modifier.fillMaxWidth(),
