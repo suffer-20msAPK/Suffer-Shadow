@@ -97,8 +97,10 @@ internal val RedSoft = Color(0xFFFF3366)
 internal val TextMuted = Color(0xFF8E92A6)
 internal val BorderPurple = Color(0xFF6C00B8)
 
-private const val SUPABASE_URL = "https://yeizclxibejfqhtfyqmi.supabase.co"
+// VPS PROXY BAĞLANTISI (Supabase yerine kendi sunucumuzu kullanıyoruz)
+private const val SUPABASE_URL = "http://46.8.225.27:8080"
 private const val SUPABASE_ANON_KEY = "sb_publishable_U8scDtQmhf830Pb5r65jxw_paP_dRRa"
+private const val VPS_AUTH_TOKEN = "suffer_shadow_gizli_anahtar_123"
 
 internal enum class FeedbackType { TAP, CONNECT, DISCONNECT, ERROR }
 
@@ -178,7 +180,7 @@ fun parseServer(raw: String, isBuiltIn: Boolean = false, category: String = "cus
     }
 }
 
-// Gelişmiş Abonelik İndirici (Türkmenistan gibi sansürlü ağlarda çalışması için)
+// Gelişmiş Abonelik İndirici (Dışarıya doğrudan bağlanır)
 fun fetchSubscriptionServers(url: String, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
@@ -230,6 +232,7 @@ fun pingServer(s: Server): Int {
     }
 }
 
+// Supabase verilerini VPS üzerinden çeken fonksiyon
 fun fetchRemoteServers(category: String, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
@@ -237,9 +240,10 @@ fun fetchRemoteServers(category: String, onResult: (List<Server>) -> Unit) {
             val url = java.net.URL("$SUPABASE_URL/rest/v1/servers?category=eq.$category&select=*")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
             conn.setRequestProperty("apikey", SUPABASE_ANON_KEY)
+            conn.setRequestProperty("X-VPS-Auth", VPS_AUTH_TOKEN) // <-- VPS GÜVENLİK ANAHTARI
             
             if (conn.responseCode in 200..299) {
                 val response = conn.inputStream.bufferedReader().use { it.readText() }
@@ -700,7 +704,7 @@ gameState.backup?.let { b ->
                     },
                     onOpenServers = { feedback(FeedbackType.TAP); showServers = true }
                 )
-                // YENİ: Güncelle ve Test Et Mantığı Ayrıldı
+                // Güncelle ve Test Et Mantığı Ayrıldı
                 tab == 0 && showServers -> ServersTab(
                     lang = lang,
                     customServers = servers,
