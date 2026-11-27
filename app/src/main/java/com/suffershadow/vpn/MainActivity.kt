@@ -630,6 +630,7 @@ gameState.backup?.let { b ->
         )
         return
     }
+    
     Scaffold(
         containerColor = BgDark,
         contentColor = Color.White,
@@ -699,7 +700,7 @@ gameState.backup?.let { b ->
                     },
                     onOpenServers = { feedback(FeedbackType.TAP); showServers = true }
                 )
-                // YENİ: onAddSubscription eklendi
+                // YENİ: Güncelle ve Test Et Mantığı Ayrıldı
                 tab == 0 && showServers -> ServersTab(
                     lang = lang,
                     customServers = servers,
@@ -709,7 +710,16 @@ gameState.backup?.let { b ->
                     selected = selectedIndex,
                     onSelect = onSelect,
                     onDelete = onDelete,
-                    onRefresh = { feedback(FeedbackType.TAP); loadRemoteData(); servers.forEach { measure(it) } },
+                    onUpdate = {
+                        // SADECE SUNUCULARI SUPABASE'DEN ÇEKER
+                        feedback(FeedbackType.TAP)
+                        loadRemoteData()
+                    },
+                    onTest = {
+                        // SADECE PING ATAR (GÜNCELLEME YAPMAZ)
+                        feedback(FeedbackType.TAP)
+                        (servers + builtInSocial + builtInPubg).forEach { measure(it) }
+                    },
                     onBack = { feedback(FeedbackType.TAP); showServers = false },
                     onAddSubscription = { subUrl ->
                         feedback(FeedbackType.CONNECT)
@@ -928,9 +938,10 @@ private fun ServersTab(
     selected: Int,
     onSelect: (Int) -> Unit,
     onDelete: (Int) -> Unit,
-    onRefresh: () -> Unit,
+    onUpdate: () -> Unit,
+    onTest: () -> Unit,
     onBack: () -> Unit,
-    onAddSubscription: (String) -> Unit // YENİ EKLENDİ
+    onAddSubscription: (String) -> Unit
 ) {
     val tm = lang == "tm"
     val connected = VpnState.status == VpnState.CONNECTED
@@ -945,11 +956,11 @@ private fun ServersTab(
         categoryTab == 0 -> builtInSocial
         else -> builtInPubg
     }
-
     val allServers = remember(customServers, builtInSocial, builtInPubg) { customServers + builtInSocial + builtInPubg }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         
+        // ÜST BAR: Geri, Başlık ve Güncelle/Test Butonları
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), 
             verticalAlignment = Alignment.CenterVertically
@@ -959,20 +970,39 @@ private fun ServersTab(
             Text(if (tm) "Serwerler" else "Sunucular", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Spacer(Modifier.weight(1f))
             
-            // YENİ: Güncelle ve Test Et Butonları (Yan Yana)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                NeonButton(
-                    text = "🔄", 
-                    modifier = Modifier.size(44.dp),
-                    onClick = onRefresh, 
-                    secondary = true
-                )
-                NeonButton(
-                    text = "⚡", 
-                    modifier = Modifier.size(44.dp),
-                    onClick = { onRefresh() }, 
-                    secondary = true
-                )
+            // YENİ TASARIM: İkon ve Altında Yazı Olan Butonlar
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // GÜNCELLE BUTONU
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    AnimatedSurface(
+                        modifier = Modifier.size(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1C1E32),
+                        onClick = onUpdate
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("🔄", fontSize = 20.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text("Güncelle", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                }
+                
+                // TEST ET BUTONU
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    AnimatedSurface(
+                        modifier = Modifier.size(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1C1E32),
+                        onClick = onTest
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("⚡", fontSize = 20.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text("Test Et", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
 
@@ -1008,7 +1038,6 @@ private fun ServersTab(
             }
         }
 
-        // YENİ: Özel Sekmesi İçin Abonelik Ekleme Butonu
         if (mainTab == 1) {
             Spacer(Modifier.height(8.dp))
             NeonButton(
@@ -1033,10 +1062,7 @@ private fun ServersTab(
                 }
             }
         } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(9.dp), 
-                contentPadding = PaddingValues(bottom = 20.dp)
-            ) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
                 itemsIndexed(currentList) { index, server ->
                     val globalIndex = allServers.indexOfFirst { it.link == server.link }
                     val isSelected = globalIndex == selected
@@ -1074,7 +1100,6 @@ private fun ServersTab(
         }
     }
 
-    // YENİ: Abonelik Ekleme Diyaloğu
     if (showSubDialog) {
         AlertDialog(
             onDismissRequest = { showSubDialog = false },
@@ -1096,14 +1121,10 @@ private fun ServersTab(
                         subUrlInput = ""
                         showSubDialog = false
                     }
-                }) {
-                    Text("Ekle", color = PurpleLight, fontWeight = FontWeight.Bold)
-                }
+                }) { Text("Ekle", color = PurpleLight, fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { showSubDialog = false }) {
-                    Text("Vazgeç", color = TextMuted)
-                }
+                TextButton(onClick = { showSubDialog = false }) { Text("Vazgeç", color = TextMuted) }
             }
         )
     }
