@@ -169,6 +169,7 @@ internal fun BoosterHeroCard(lang: String, prefs: SharedPreferences, feedback: (
     AnimatedSurface(
         modifier = Modifier
             .fillMaxWidth()
+            .wrapContentHeight() // <--- BU EKLENDİ (Boşluğu kapatır)
             .border(1.5.dp, Brush.linearGradient(listOf(PurpleLight, PurpleMain, AccentGreen.copy(alpha = if (enabled) 0.9f else 0.25f))), shape),
         shape = shape,
         brush = Brush.verticalGradient(listOf(Color(0xFF2A1260), Color(0xFF160C36), Color(0xFF0E1124))),
