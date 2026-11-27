@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -97,7 +98,7 @@ internal val RedSoft = Color(0xFFFF3366)
 internal val TextMuted = Color(0xFF8E92A6)
 internal val BorderPurple = Color(0xFF6C00B8)
 
-// VPS PROXY BAĞLANTISI (Supabase yerine kendi sunucumuzu kullanıyoruz)
+// VPS PROXY BAĞLANTISI
 private const val SUPABASE_URL = "http://46.8.225.27:8080"
 private const val SUPABASE_ANON_KEY = "sb_publishable_U8scDtQmhf830Pb5r65jxw_paP_dRRa"
 private const val VPS_AUTH_TOKEN = "suffer_shadow_gizli_anahtar_123"
@@ -232,8 +233,8 @@ fun pingServer(s: Server): Int {
     }
 }
 
-// Supabase verilerini VPS üzerinden çeken fonksiyon
-fun fetchRemoteServers(category: String, onResult: (List<Server>) -> Unit) {
+// VPS ÜZERİNDEN SUNUCU ÇEKME (Hata mesajı gösterme özelliği eklendi)
+fun fetchRemoteServers(category: String, context: Context, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
         try {
@@ -243,7 +244,7 @@ fun fetchRemoteServers(category: String, onResult: (List<Server>) -> Unit) {
             conn.connectTimeout = 8000
             conn.readTimeout = 8000
             conn.setRequestProperty("apikey", SUPABASE_ANON_KEY)
-            conn.setRequestProperty("X-VPS-Auth", VPS_AUTH_TOKEN) // <-- VPS GÜVENLİK ANAHTARI
+            conn.setRequestProperty("X-VPS-Auth", VPS_AUTH_TOKEN)
             
             if (conn.responseCode in 200..299) {
                 val response = conn.inputStream.bufferedReader().use { it.readText() }
@@ -256,8 +257,18 @@ fun fetchRemoteServers(category: String, onResult: (List<Server>) -> Unit) {
                         list.add(it.copy(name = name)) 
                     }
                 }
+            } else {
+                // HATA MESAJINI EKRANA YAZDIR
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Sunucu Hatası: ${conn.responseCode}", Toast.LENGTH_LONG).show()
+                }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { 
+            // BAĞLANTI HATASINI EKRANA YAZDIR (Örn: Timeout, DNS Hatası)
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, "Bağlantı Hatası: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
         Handler(Looper.getMainLooper()).post { onResult(list) }
     }
 }
@@ -374,12 +385,13 @@ fun AppRoot() {
     val builtInSocial = remember { mutableStateListOf<Server>() }
     val builtInPubg = remember { mutableStateListOf<Server>() }
 
+    // context parametresi eklendi (Hata mesajı göstermek için)
     val loadRemoteData = {
-        fetchRemoteServers("social") { fetched ->
+        fetchRemoteServers("social", context) { fetched ->
             builtInSocial.clear()
             builtInSocial.addAll(fetched)
         }
-        fetchRemoteServers("pubg") { fetched ->
+        fetchRemoteServers("pubg", context) { fetched ->
             builtInPubg.clear()
             builtInPubg.addAll(fetched)
         }
@@ -964,7 +976,6 @@ private fun ServersTab(
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         
-        // ÜST BAR: Geri, Başlık ve Güncelle/Test Butonları
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), 
             verticalAlignment = Alignment.CenterVertically
@@ -1133,6 +1144,7 @@ private fun ServersTab(
         )
     }
 }
+
 @Composable
 private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
     var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
@@ -1250,7 +1262,6 @@ private fun SocialMediaRow(icon: String, title: String, buttonText: String, butt
         }
     }
 }
-
 @Composable
 private fun AuthDialog(
     isRegister: Boolean,
@@ -1381,6 +1392,7 @@ private fun AuthDialog(
         }
     )
 }
+
 @Composable
 internal fun SectionHeading(number: String, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 9.dp)) {
@@ -1508,6 +1520,7 @@ internal fun AnimatedSurface(
         content = content
     )
 }
+
 @Composable
 private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) {
     androidx.compose.foundation.Canvas(modifier) {
@@ -1702,7 +1715,7 @@ private fun GameToolsTab(
     onOpenVip: () -> Unit
 ) {
     val tm = lang == "tm"
-    var showBoosterScreen by remember { mutableStateOf(false) }
+        var showBoosterScreen by remember { mutableStateOf(false) }
 
     if (showBoosterScreen) {
         GameBoosterScreen(
