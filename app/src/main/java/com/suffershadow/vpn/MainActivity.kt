@@ -134,7 +134,6 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
-
 data class Server(
     val link: String, 
     val name: String, 
@@ -174,6 +173,7 @@ fun parseServer(raw: String, isBuiltIn: Boolean = false, category: String = "cus
         null
     }
 }
+
 fun fetchSubscriptionServers(url: String, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
@@ -214,7 +214,6 @@ fun fetchSubscriptionServers(url: String, onResult: (List<Server>) -> Unit) {
         Handler(Looper.getMainLooper()).post { onResult(list) }
     }
 }
-
 fun pingServer(s: Server): Int {
     return try {
         val start = System.nanoTime()
@@ -299,7 +298,6 @@ private fun calculateDaysLeft(endDateStr: String): Int {
         } else 0
     } catch (e: Exception) { 0 }
 }
-
 @Composable
 private fun rememberUiFeedback(soundEnabled: Boolean, vibrationEnabled: Boolean): (FeedbackType) -> Unit {
     val haptic = LocalHapticFeedback.current
@@ -348,6 +346,7 @@ fun rememberVpnConnect(): (Server) -> Unit {
         }
     }
 }
+
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
@@ -365,103 +364,102 @@ fun AppRoot() {
             vipDaysLeft = calculateDaysLeft(endDateStr)
         }
     }
-
     var lang by remember { mutableStateOf(prefs.getString("lang", "tr") ?: "tr") }
-    var soundEnabled by remember { mutableStateOf(prefs.getBoolean("sound_enabled", true)) }
-    var vibrationEnabled by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", true)) }
-    val feedback = rememberUiFeedback(soundEnabled, vibrationEnabled)
+var soundEnabled by remember { mutableStateOf(prefs.getBoolean("sound_enabled", true)) }
+var vibrationEnabled by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", true)) }
+val feedback = rememberUiFeedback(soundEnabled, vibrationEnabled)
 
-    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    LaunchedEffect(Unit) {
-        if (android.os.Build.VERSION.SDK_INT >= 33 &&
-            androidx.core.content.ContextCompat.checkSelfPermission(context, "android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            notifLauncher.launch("android.permission.POST_NOTIFICATIONS")
-        }
+val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+LaunchedEffect(Unit) {
+    if (android.os.Build.VERSION.SDK_INT >= 33 &&
+        androidx.core.content.ContextCompat.checkSelfPermission(context, "android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
+    ) {
+        notifLauncher.launch("android.permission.POST_NOTIFICATIONS")
     }
+}
 
-    val servers = remember {
-        val list = mutableStateListOf<Server>()
-        var saved = prefs.getString("links", "") ?: ""
-        if (saved.isEmpty()) saved = prefs.getString("link", "") ?: ""
-        saved.split("\n").forEach { line -> parseServer(line, isBuiltIn = false)?.let { if (list.none { old -> old.link == it.link }) list.add(it) } }
-        list
+val servers = remember {
+    val list = mutableStateListOf<Server>()
+    var saved = prefs.getString("links", "") ?: ""
+    if (saved.isEmpty()) saved = prefs.getString("link", "") ?: ""
+    saved.split("\n").forEach { line -> parseServer(line, isBuiltIn = false)?.let { if (list.none { old -> old.link == it.link }) list.add(it) } }
+    list
+}
+
+val builtInSocial = remember { mutableStateListOf<Server>() }
+val builtInPubg = remember { mutableStateListOf<Server>() }
+
+val loadRemoteData = {
+    fetchRemoteServers("social", context) { fetched ->
+        builtInSocial.clear()
+        builtInSocial.addAll(fetched)
     }
-
-    val builtInSocial = remember { mutableStateListOf<Server>() }
-    val builtInPubg = remember { mutableStateListOf<Server>() }
-
-    val loadRemoteData = {
-        fetchRemoteServers("social", context) { fetched ->
-            builtInSocial.clear()
-            builtInSocial.addAll(fetched)
-        }
-        fetchRemoteServers("pubg", context) { fetched ->
-            builtInPubg.clear()
-            builtInPubg.addAll(fetched)
-        }
+    fetchRemoteServers("pubg", context) { fetched ->
+        builtInPubg.clear()
+        builtInPubg.addAll(fetched)
     }
+}
 
-    LaunchedEffect(Unit) { loadRemoteData() }
+LaunchedEffect(Unit) { loadRemoteData() }
 
-    val pings = remember { mutableStateMapOf<String, Int>() }
-    var selected by remember { mutableStateOf(prefs.getInt("sel", 0)) }
-    var tab by remember { mutableStateOf(0) }
-    var showServers by remember { mutableStateOf(false) }
+val pings = remember { mutableStateMapOf<String, Int>() }
+var selected by remember { mutableStateOf(prefs.getInt("sel", 0)) }
+var tab by remember { mutableStateOf(0) }
+var showServers by remember { mutableStateOf(false) }
 
-    LaunchedEffect(NavRequest.seq) {
-        if (NavRequest.seq > 0) {
-            tab = NavRequest.tab
-            showServers = NavRequest.servers
-        }
+LaunchedEffect(NavRequest.seq) {
+    if (NavRequest.seq > 0) {
+        tab = NavRequest.tab
+        showServers = NavRequest.servers
     }
+}
 
-    LaunchedEffect(Unit) {
-        BoosterState.load(prefs)
-        if (BoosterState.enabled && !BoosterState.serviceRunning) startBoosterService(context)
+LaunchedEffect(Unit) {
+    BoosterState.load(prefs)
+    if (BoosterState.enabled && !BoosterState.serviceRunning) startBoosterService(context)
+}
+var input by remember { mutableStateOf("") }
+var message by remember { mutableStateOf("") }
+
+val sessionMs = 2 * 60 * 60 * 1000L
+var vpnTimeLeft by remember { mutableStateOf(7200) }
+var sessionWasConnected by remember { mutableStateOf(false) }
+var sessionExpired by remember { mutableStateOf(false) }
+
+LaunchedEffect(VpnState.status) {
+    if (prefs.getBoolean("session_expired", false)) {
+        prefs.edit().putBoolean("session_expired", false).apply()
+        sessionExpired = true
     }
-    var input by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
-
-    val sessionMs = 2 * 60 * 60 * 1000L
-    var vpnTimeLeft by remember { mutableStateOf(7200) }
-    var sessionWasConnected by remember { mutableStateOf(false) }
-    var sessionExpired by remember { mutableStateOf(false) }
-
-    LaunchedEffect(VpnState.status) {
-        if (prefs.getBoolean("session_expired", false)) {
-            prefs.edit().putBoolean("session_expired", false).apply()
-            sessionExpired = true
+    if (VpnState.status == VpnState.CONNECTED) {
+        sessionWasConnected = true
+        var end = prefs.getLong("session_end", 0L)
+        if (end <= System.currentTimeMillis()) {
+            end = System.currentTimeMillis() + sessionMs
+            prefs.edit().putLong("session_end", end).apply()
         }
-        if (VpnState.status == VpnState.CONNECTED) {
-            sessionWasConnected = true
-            var end = prefs.getLong("session_end", 0L)
-            if (end <= System.currentTimeMillis()) {
-                end = System.currentTimeMillis() + sessionMs
-                prefs.edit().putLong("session_end", end).apply()
+        while (VpnState.status == VpnState.CONNECTED) {
+            end = prefs.getLong("session_end", end)
+            val left = ((end - System.currentTimeMillis()) / 1000L).toInt()
+            vpnTimeLeft = left.coerceAtLeast(0)
+            if (left <= 0) {
+                prefs.edit().remove("session_end").apply()
+                stopVpnService(context)
+                sessionExpired = true
+                break
             }
-            while (VpnState.status == VpnState.CONNECTED) {
-                end = prefs.getLong("session_end", end)
-                val left = ((end - System.currentTimeMillis()) / 1000L).toInt()
-                vpnTimeLeft = left.coerceAtLeast(0)
-                if (left <= 0) {
-                    prefs.edit().remove("session_end").apply()
-                    stopVpnService(context)
-                    sessionExpired = true
-                    break
-                }
-                delay(500L)
-            }
-        } else if (VpnState.status != VpnState.CONNECTING) {
-            prefs.edit().remove("session_end").apply()
-            vpnTimeLeft = 7200
+            delay(500L)
         }
+    } else if (VpnState.status != VpnState.CONNECTING) {
+        prefs.edit().remove("session_end").apply()
+        vpnTimeLeft = 7200
     }
-    
-    val connect = rememberVpnConnect()
-    val allServers = servers + builtInSocial + builtInPubg
-    val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
-    val save: () -> Unit = {
+}
+val connect = rememberVpnConnect()
+val allServers = servers + builtInSocial + builtInPubg
+val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
+
+val save: () -> Unit = {
     prefs.edit()
         .putString("links", servers.joinToString("\n") { it.link })
         .putInt("sel", selected)
@@ -556,7 +554,6 @@ val onDelete: (Int) -> Unit = { index ->
         save()
     }
 }
-
 val onAdd: () -> Unit = {
     feedback(FeedbackType.TAP)
     var added = 0
@@ -618,45 +615,49 @@ val switchToServer: (Server) -> Unit = { target ->
         }
     }
 }
-    gameState.backup?.let { b ->
-        GameBackupDialog(
-            lang = lang,
-            ranked = b,
-            failedName = current?.name ?: "",
-            auto = gameState.autoFailover,
-            onSwitch = { gameState.backup = null; switchToServer(b.server) },
-            onDismiss = { gameState.backupDismissedFor = current?.link; gameState.backup = null }
-        )
-    }
-    
-    if (sessionExpired) {
-        AlertDialog(
-            onDismissRequest = { sessionExpired = false },
-            containerColor = CardBg,
-            titleContentColor = Color.White,
-            textContentColor = TextMuted,
-            title = { Text(if (lang == "tm") "Wagt gutardy" else "Süre doldu", fontWeight = FontWeight.Bold) },
-            text = { Text(if (lang == "tm") "2 sagatlyk sessiýa gutardy we VPN ýapyldy. Gaýtadan birikseňiz täze sessiýa başlanar." else "2 saatlik oturum doldu ve VPN kapatıldı. Yeniden bağlanırsan yeni oturum başlar.") },
-            confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
-        )
-    }
-    
-    if (showVipScreen) {
-        VipScreen(
-            prefs = prefs,
-            onVipActivated = {
-                isVipUser = true
-                scope.launch {
-                    val (_, end) = RedeemManager.checkVip(context)
-                    if (end != null) vipDaysLeft = calculateDaysLeft(end)
-                }
-                showVipScreen = false
-            },
-            onDismiss = { showVipScreen = false }
-        )
-        return
-    }
-    
+
+gameState.backup?.let { b ->
+    GameBackupDialog(
+        lang = lang,
+        ranked = b,
+        failedName = current?.name ?: "",
+        auto = gameState.autoFailover,
+        onSwitch = { gameState.backup = null; switchToServer(b.server) },
+        onDismiss = { gameState.backupDismissedFor = current?.link; gameState.backup = null }
+    )
+}
+
+if (sessionExpired) {
+    AlertDialog(
+        onDismissRequest = { sessionExpired = false },
+        containerColor = CardBg,
+        titleContentColor = Color.White,
+        textContentColor = TextMuted,
+        title = { Text(if (lang == "tm") "Wagt gutardy" else "Süre doldu", fontWeight = FontWeight.Bold) },
+        text = { Text(if (lang == "tm") "2 sagatlyk sessiýa gutardy we VPN ýapyldy. Gaýtadan birikseňiz täze sessiýa başlanar." else "2 saatlik oturum doldu ve VPN kapatıldı. Yeniden bağlanırsan yeni oturum başlar.") },
+        confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
+    )
+}
+
+if (showVipScreen) {
+    VipScreen(
+        prefs = prefs,
+        onVipActivated = {
+            isVipUser = true
+            val localEnd = prefs.getString("vip_end_date", null)
+            if (localEnd != null) vipDaysLeft = calculateDaysLeft(localEnd)
+            
+            scope.launch {
+                kotlinx.coroutines.delay(1000)
+                val (_, end) = RedeemManager.checkVip(context)
+                if (end != null) vipDaysLeft = calculateDaysLeft(end)
+            }
+            showVipScreen = false
+        },
+        onDismiss = { showVipScreen = false }
+    )
+    return
+}
     Scaffold(
         containerColor = BgDark,
         contentColor = Color.White,
@@ -711,21 +712,25 @@ val switchToServer: (Server) -> Unit = { target ->
                     timeLeft = vpnTimeLeft,
                     everConnected = sessionWasConnected,
                     onToggle = {
-                        val isLoggedIn = prefs.getBoolean("is_logged_in", false)
-                        if (!isLoggedIn) {
-                            android.widget.Toast.makeText(context, "Lütfen önce giriş yapın!", android.widget.Toast.LENGTH_SHORT).show()
-                            tab = 2
-                            feedback(FeedbackType.ERROR)
-                        } else if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+                        // KAPATMA SORUNU ÇÖZÜLDÜ
+                        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
                             feedback(FeedbackType.DISCONNECT)
-                            toggleVpn()
+                            stopVpnService(context)
                         } else {
-                            if (isVipUser) {
-                                feedback(FeedbackType.CONNECT)
-                                toggleVpn()
-                            } else {
+                            val isLoggedIn = prefs.getBoolean("is_logged_in", false)
+                            if (!isLoggedIn) {
+                                android.widget.Toast.makeText(context, "Lütfen önce giriş yapın!", android.widget.Toast.LENGTH_SHORT).show()
+                                tab = 2
+                                feedback(FeedbackType.ERROR)
+                            } else if (!isVipUser) {
                                 feedback(FeedbackType.ERROR)
                                 showVipScreen = true
+                            } else if (current == null) {
+                                android.widget.Toast.makeText(context, "Lütfen bir sunucu seçin!", android.widget.Toast.LENGTH_SHORT).show()
+                                showServers = true
+                            } else {
+                                feedback(FeedbackType.CONNECT)
+                                toggleVpn()
                             }
                         }
                     },
@@ -1040,892 +1045,5 @@ private fun HomeTab(
         }
         
         Spacer(modifier = Modifier.height(30.dp))
-    }
-}
-@Composable
-private fun ServersTab(
-    lang: String,
-    customServers: List<Server>,
-    builtInSocial: List<Server>,
-    builtInPubg: List<Server>,
-    pings: Map<String, Int>,
-    selected: Int,
-    onSelect: (Int) -> Unit,
-    onDelete: (Int) -> Unit,
-    onUpdate: () -> Unit,
-    onTest: () -> Unit,
-    onBack: () -> Unit,
-    onAddSubscription: (String) -> Unit
-) {
-    val tm = lang == "tm"
-    val connected = VpnState.status == VpnState.CONNECTED
-    
-    var mainTab by remember { mutableStateOf(0) }
-    var categoryTab by remember { mutableStateOf(0) }
-    var subUrlInput by remember { mutableStateOf("") }
-    var showSubDialog by remember { mutableStateOf(false) }
-
-    val currentList = when {
-        mainTab == 1 -> customServers
-        categoryTab == 0 -> builtInSocial
-        else -> builtInPubg
-    }
-    val allServers = remember(customServers, builtInSocial, builtInPubg) { customServers + builtInSocial + builtInPubg }
-
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), 
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(ShadowCardBg)
-                    .border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
-                    .clickable { onBack() },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("‹", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            }
-            
-            Spacer(modifier = Modifier.weight(1f))
-            Text(if (tm) "Serwerler" else "Sunucular", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Spacer(modifier = Modifier.weight(1f))
-            
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp)).clickable { onUpdate() },
-                        contentAlignment = Alignment.Center
-                    ) { Text("🔄", fontSize = 20.sp) }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Güncelle", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp)).clickable { onTest() },
-                        contentAlignment = Alignment.Center
-                    ) { Text("⚡", fontSize = 20.sp) }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Test Et", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-        }
-
-        Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            val isMainTab0 = mainTab == 0
-            Box(
-                modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
-                    .background(if (isMainTab0) Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)) else Brush.linearGradient(listOf(ShadowCardBg, ShadowCardBg)))
-                    .border(1.dp, if (isMainTab0) ShadowRedNeon else Color(0xFF333333), RoundedCornerShape(12.dp))
-                    .clickable { mainTab = 0 },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Otomatik", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
-            val isMainTab1 = mainTab == 1
-            Box(
-                modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
-                    .background(if (isMainTab1) Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)) else Brush.linearGradient(listOf(ShadowCardBg, ShadowCardBg)))
-                    .border(1.dp, if (isMainTab1) ShadowRedNeon else Color(0xFF333333), RoundedCornerShape(12.dp))
-                    .clickable { mainTab = 1 },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Özel", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
-        }
-
-        if (mainTab == 0) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                val isCat0 = categoryTab == 0
-                Box(
-                    modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
-                        .background(if (isCat0) Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)) else Brush.linearGradient(listOf(ShadowCardBg, ShadowCardBg)))
-                        .border(1.dp, if (isCat0) ShadowRedNeon else Color(0xFF333333), RoundedCornerShape(12.dp))
-                        .clickable { categoryTab = 0 },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Sosyal Medya", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-                val isCat1 = categoryTab == 1
-                Box(
-                    modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
-                        .background(if (isCat1) Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)) else Brush.linearGradient(listOf(ShadowCardBg, ShadowCardBg)))
-                        .border(1.dp, if (isCat1) ShadowRedNeon else Color(0xFF333333), RoundedCornerShape(12.dp))
-                        .clickable { categoryTab = 1 },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("PUBG", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-            }
-        }
-
-        if (mainTab == 1) {
-            Spacer(Modifier.height(8.dp))
-            Box(
-                modifier = Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp))
-                    .background(ShadowCardBg).border(1.dp, ShadowRedNeon, RoundedCornerShape(12.dp))
-                    .clickable { showSubDialog = true },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Abonelik Linki Ekle", color = ShadowRedNeon, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-
-        if (currentList.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(30.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("○", color = ShadowRedNeon, fontSize = 34.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(if (tm) "Serwer ýok" else "Henüz sunucu yok", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        if (mainTab == 0) (if(tm) "Uzakdan kodlar ýüklenýär..." else "Uzaktan sunucular yükleniyor veya henüz eklenmedi.")
-                        else (if (tm) "Ýokardan abonelik goşuň." else "Yukarıdan abonelik linki ekleyin."), 
-                        color = TextMuted, fontSize = 13.sp, textAlign = TextAlign.Center
-                    )
-                }
-            }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
-                itemsIndexed(currentList) { index, server ->
-                    val globalIndex = allServers.indexOfFirst { it.link == server.link }
-                    val isSelected = globalIndex == selected
-                    val pingValue = pings[server.link]
-                    
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(84.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isSelected) Color(0xFF1A0505) else ShadowCardBg)
-                            .border(
-                                width = if (isSelected) 1.5.dp else 1.dp,
-                                brush = if (isSelected) Brush.linearGradient(listOf(ShadowRedNeon, Color(0xFF9C1027))) else Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF111111))),
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .clickable { onSelect(globalIndex) }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier.width(56.dp).height(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)),
-                            contentAlignment = Alignment.Center
-                        ) { Text("🌐", fontSize = 20.sp) }
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(server.name, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(protocolName(server), color = ShadowRedNeon, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                Text("  •  ", color = TextMuted, fontSize = 12.sp)
-                                val status = serverStatus(pingValue, isSelected && connected, lang)
-                                Text(status.first, color = status.second, fontSize = 12.sp)
-                            }
-                        }
-
-                        Column(horizontalAlignment = Alignment.End) {
-                            if (!server.isBuiltIn) {
-                                Box(
-                                    modifier = Modifier.size(32.dp).clip(CircleShape).background(Color(0xFFFF4658).copy(alpha = 0.2f)).clickable { onDelete(customServers.indexOf(server)) },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("✕", color = Color(0xFFFF4658), fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                }
-                            } else {
-                                val antennaColor = serverStatus(pingValue, isSelected && connected, lang).second
-                                Text("📶", fontSize = 20.sp, color = antennaColor)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showSubDialog) {
-        AlertDialog(
-            onDismissRequest = { showSubDialog = false },
-            containerColor = ShadowCardBg,
-            title = { Text("Abonelik Linki", color = Color.White) },
-            text = {
-                OutlinedTextField(
-                    value = subUrlInput,
-                    onValueChange = { subUrlInput = it },
-                    placeholder = { Text("https://.../sub/...") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (subUrlInput.isNotBlank()) {
-                        onAddSubscription(subUrlInput.trim())
-                        subUrlInput = ""
-                        showSubDialog = false
-                    }
-                }) { Text("Ekle", color = ShadowRedNeon, fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSubDialog = false }) { Text("Vazgeç", color = TextMuted) }
-            }
-        )
-    }
-}
-@Composable
-private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
-    var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
-    var phoneId by remember { mutableStateOf(prefs.getString("logged_in_phone", "") ?: "") }
-    var showAuthDialog by remember { mutableStateOf(false) }
-    var isRegisterMode by remember { mutableStateOf(false) }
-
-    if (!isLoggedIn) {
-        Column(
-            Modifier.fillMaxSize().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text("S", color = ShadowRedNeon, fontSize = 80.sp, fontWeight = FontWeight.Black)
-            Text("SUFFER SHADOW", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Spacer(modifier = Modifier.height(40.dp))
-            
-            Text(
-                text = "Devam etmek için giriş yapmalısınız.",
-                color = TextMuted, fontSize = 14.sp, textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            Box(
-                modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)))
-                    .clickable { feedback(FeedbackType.TAP); isRegisterMode = false; showAuthDialog = true },
-                contentAlignment = Alignment.Center
-            ) { Text("Giriş Yap", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Box(
-                modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
-                    .background(ShadowCardBg).border(1.dp, ShadowRedNeon, RoundedCornerShape(12.dp))
-                    .clickable { feedback(FeedbackType.TAP); isRegisterMode = true; showAuthDialog = true },
-                contentAlignment = Alignment.Center
-            ) { Text("Yeni Hesap Oluştur", color = ShadowRedNeon, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-        }
-    } else {
-        val uriHandler = LocalUriHandler.current
-
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("PROFİLİM", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text("ID: $phoneId", color = ShadowRedNeon, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            Box(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(16.dp)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("SOSYAL MEDYA", color = ShadowRedNeon, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
-                    
-                    SocialMediaRow(
-                        icon = "🎵", title = "TikTok Kanalım", 
-                        buttonText = "Abone Ol", buttonColor = Color(0xFF00F2FE),
-                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://tiktok.com/@suffer_pubg") } }
-                    )
-                    SocialMediaRow(
-                        icon = "✈️", title = "Suffere Yaz", 
-                        buttonText = "Mesaj", buttonColor = Color(0xFF229ED9),
-                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_pubg") } }
-                    )
-                    SocialMediaRow(
-                        icon = "📢", title = "Telegram Kanalımız", 
-                        buttonText = "Abone Ol", buttonColor = Color(0xFF229ED9),
-                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffervpn") } }
-                    )
-                    SocialMediaRow(
-                        icon = "💬", title = "Telegram Sohbetimiz", 
-                        buttonText = "Katıl", buttonColor = Color(0xFF229ED9),
-                        onClick = { feedback(FeedbackType.TAP); runCatching { uriHandler.openUri("https://t.me/suffer_chat") } }
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(30.dp))
-            
-            Box(
-                modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
-                    .background(ShadowCardBg).border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
-                    .clickable { 
-                        feedback(FeedbackType.TAP)
-                        isLoggedIn = false
-                        phoneId = ""
-                        prefs.edit().putBoolean("is_logged_in", false).putString("logged_in_phone", "").apply()
-                    },
-                contentAlignment = Alignment.Center
-            ) { Text("Çıkış Yap", color = Color(0xFFFF4658), fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-        }
-    }
-
-    if (showAuthDialog) {
-        AuthDialog(
-            isRegister = isRegisterMode,
-            onDismiss = { showAuthDialog = false },
-            onSuccess = { id ->
-                phoneId = id
-                isLoggedIn = true
-                prefs.edit().putBoolean("is_logged_in", true).putString("logged_in_phone", id).apply()
-                showAuthDialog = false
-            }
-        )
-    }
-}
-
-@Composable
-private fun SocialMediaRow(icon: String, title: String, buttonText: String, buttonColor: Color, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ShadowCardBg2).padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(icon, fontSize = 24.sp)
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-        Box(
-            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(buttonColor.copy(alpha = 0.2f)).clickable { onClick() }.padding(horizontal = 12.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(text = buttonText, color = buttonColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun AuthDialog(
-    isRegister: Boolean,
-    onDismiss: () -> Unit,
-    onSuccess: (String) -> Unit
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var phone by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
-    var passConfirm by remember { mutableStateOf("") }
-    var errorMsg by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = { if (!isLoading) onDismiss() },
-        containerColor = ShadowCardBg,
-        titleContentColor = Color.White,
-        textContentColor = TextMuted,
-        title = { Text(if (isRegister) "Yeni Hesap Oluştur" else "Giriş Yap", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("🇹🇲 +993", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedTextField(
-                        value = phone,
-                        onValueChange = { if (it.length <= 8) phone = it.filter { char -> char.isDigit() } },
-                        placeholder = { Text("61234567") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        enabled = !isLoading
-                    )
-                }
-                OutlinedTextField(
-                    value = pass,
-                    onValueChange = { pass = it },
-                    label = { Text("Şifre") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading
-                )
-                if (isRegister) {
-                    OutlinedTextField(
-                        value = passConfirm,
-                        onValueChange = { passConfirm = it },
-                        label = { Text("Şifreyi Onayla") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
-                    )
-                }
-                if (errorMsg.isNotEmpty()) {
-                    Text(errorMsg, color = Color(0xFFFF4658), fontSize = 12.sp)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    errorMsg = ""
-                    if (phone.length != 8) {
-                        errorMsg = "Numara +993 olmadan 8 haneli olmalıdır."
-                        return@TextButton
-                    }
-                    val prefix = phone.take(2)
-                    if (prefix !in listOf("61", "62", "63", "64", "65", "71")) {
-                        errorMsg = "Geçersiz numara! (61, 62, 63, 64, 65, 71 ile başlamalı)"
-                        return@TextButton
-                    }
-                    if (pass.length < 4) {
-                        errorMsg = "Şifre en az 4 karakter olmalıdır."
-                        return@TextButton
-                    }
-                    if (isRegister && pass != passConfirm) {
-                        errorMsg = "Şifreler uyuşmuyor!"
-                        return@TextButton
-                    }
-
-                    isLoading = true
-                    val deviceId = RedeemManager.getDeviceId(context)
-
-                    scope.launch {
-                        try {
-                            if (isRegister) {
-                                val exists = UserManager.checkUserExists(phone)
-                                if (exists) {
-                                    errorMsg = "Bu numara zaten kayıtlı. Lütfen Giriş Yapın."
-                                    isLoading = false
-                                } else {
-                                    val (success, msg) = UserManager.registerUser(phone, pass, deviceId)
-                                    if (success) {
-                                        onSuccess(phone)
-                                    } else {
-                                        errorMsg = msg
-                                        isLoading = false
-                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            } else {
-                                val (success, msg) = UserManager.loginUser(phone, pass, deviceId)
-                                if (success) {
-                                    onSuccess(phone)
-                                } else {
-                                    errorMsg = msg
-                                    isLoading = false
-                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        } catch (e: Exception) {
-                            errorMsg = "Bağlantı Hatası: ${e.message}"
-                            isLoading = false
-                            android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
-                        }
-                    }
-                },
-                enabled = !isLoading
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = ShadowRedNeon, strokeWidth = 2.dp)
-                } else {
-                    Text(if (isRegister) "Kayıt Ol" else "Giriş Yap", color = ShadowRedNeon, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isLoading) { Text("Vazgeç", color = TextMuted) }
-        }
-    )
-}
-@Composable
-internal fun SectionHeading(number: String, title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 9.dp)) {
-        Text(number, color = ShadowRedNeon, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-        Spacer(Modifier.width(9.dp))
-        Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-    }
-}
-
-@Composable
-internal fun PreferenceSwitchRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(3.dp))
-            Text(subtitle, color = TextMuted, fontSize = 11.sp)
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = ShadowRedNeon,
-                checkedBorderColor = ShadowRedDeep,
-                uncheckedThumbColor = TextMuted,
-                uncheckedTrackColor = Color(0xFF30364D),
-                uncheckedBorderColor = Color(0xFF333333)
-            )
-        )
-    }
-}
-
-@Composable
-internal fun StatusPill(text: String, color: Color) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ShadowCardBg.copy(alpha = 0.82f)).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(color))
-        Spacer(Modifier.width(9.dp))
-        Text(text, color = color, fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 18.sp, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-internal fun InfoPill(modifier: Modifier = Modifier, title: String, subtitle: String) {
-    Column(modifier.clip(RoundedCornerShape(12.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF222222), RoundedCornerShape(12.dp)).padding(horizontal = 13.dp, vertical = 12.dp)) {
-        Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(subtitle, color = TextMuted, fontSize = 11.sp, maxLines = 1)
-    }
-}
-
-@Composable
-internal fun NeonButton(
-    text: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    secondary: Boolean = false,
-    leading: String? = null
-) {
-    AnimatedSurface(
-        modifier = modifier.heightIn(min = 48.dp),
-        shape = RoundedCornerShape(12.dp),
-        brush = if (secondary) null else Brush.horizontalGradient(listOf(ShadowRedDeep, ShadowRedNeon, Color(0xFFFF5360))),
-        color = if (secondary) ShadowCardBg else ShadowRedNeon,
-        onClick = onClick,
-        contentAlignment = Alignment.Center
-    ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 11.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            if (leading != null) {
-                Text(leading, color = if (secondary) ShadowRedNeon else Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(9.dp))
-            }
-            Text(text, color = if (secondary) ShadowRedNeon else Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, letterSpacing = 1.sp)
-        }
-    }
-}
-
-@Composable
-internal fun AnimatedSurface(
-    modifier: Modifier = Modifier,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
-    color: Color = ShadowCardBg,
-    brush: Brush? = null,
-    onClick: (() -> Unit)? = null,
-    enabled: Boolean = true,
-    contentAlignment: Alignment = Alignment.Center,
-    content: @Composable BoxScope.() -> Unit
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = 0.62f, stiffness = 520f)
-    )
-    val clickModifier = if (onClick != null) {
-        Modifier.clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
-    } else Modifier
-    
-    val borderModifier = if (brush == null && color == ShadowCardBg) Modifier.border(1.dp, Color(0xFF2A0000), shape) else Modifier
-
-    Box(
-        modifier = modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(shape)
-            .then(if (brush != null) Modifier.background(brush, shape) else Modifier.background(color, shape))
-            .then(borderModifier)
-            .then(clickModifier),
-        contentAlignment = contentAlignment,
-        content = content
-    )
-}
-
-@Composable
-private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val w = size.width
-        val h = size.height
-        val stroke = 2.1.dp.toPx()
-        val style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        when (kind) {
-            "home" -> {
-                val path = Path().apply {
-                    moveTo(w * 0.12f, h * 0.47f)
-                    lineTo(w * 0.5f, h * 0.12f)
-                    lineTo(w * 0.88f, h * 0.47f)
-                    moveTo(w * 0.22f, h * 0.42f)
-                    lineTo(w * 0.22f, h * 0.88f)
-                    lineTo(w * 0.78f, h * 0.88f)
-                    lineTo(w * 0.78f, h * 0.42f)
-                    moveTo(w * 0.43f, h * 0.88f)
-                    lineTo(w * 0.43f, h * 0.62f)
-                    lineTo(w * 0.57f, h * 0.62f)
-                    lineTo(w * 0.57f, h * 0.88f)
-                }
-                drawPath(path, color, style = style)
-            }
-            "game" -> {
-                drawRoundRect(
-                    color,
-                    topLeft = Offset(w * 0.08f, h * 0.30f),
-                    size = Size(w * 0.84f, h * 0.44f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.2f, w * 0.2f),
-                    style = style
-                )
-                drawLine(color, Offset(w * 0.24f, h * 0.52f), Offset(w * 0.42f, h * 0.52f), stroke, cap = StrokeCap.Round)
-                drawLine(color, Offset(w * 0.33f, h * 0.43f), Offset(w * 0.33f, h * 0.61f), stroke, cap = StrokeCap.Round)
-                drawCircle(color, radius = w * 0.045f, center = Offset(w * 0.66f, h * 0.47f))
-                drawCircle(color, radius = w * 0.045f, center = Offset(w * 0.76f, h * 0.57f))
-            }
-            else -> {
-                drawCircle(color, radius = w * 0.17f, center = Offset(w * 0.5f, h * 0.29f), style = style)
-                drawArc(color, 180f, 180f, false, Offset(w * 0.19f, h * 0.48f), Size(w * 0.62f, h * 0.48f), style = style)
-            }
-        }
-    }
-}
-
-@Composable
-fun SufferShadowTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = ShadowRedNeon,
-            secondary = ShadowRedNeon,
-            background = ShadowBgDark,
-            surface = ShadowCardBg,
-            onPrimary = Color.White,
-            onBackground = Color.White,
-            onSurface = Color.White
-        ),
-        content = content
-    )
-}
-
-object GamePrefs {
-    const val BLOCK_BACKGROUND = "gm_block_bg"
-    const val PRIORITIZE_GAME = "gm_priority"
-    const val SUGGEST_BACKUP = "gm_backup"
-    const val AUTO_FAILOVER = "gm_auto_failover"
-    const val AB_TARGET = "gm_ab_target"
-}
-
-private data class GamePingSample(val timeMs: Long, val ms: Int)
-private data class GameProbe(val avg: Int, val min: Int, val jitter: Int, val lossPct: Int)
-private data class GameRanked(val server: Server, val result: GameProbe, val load: Int?)
-
-private class GameToolsState(private val prefs: android.content.SharedPreferences) {
-    val history = mutableStateListOf<GamePingSample>()
-    var blockBackground by mutableStateOf(prefs.getBoolean(GamePrefs.BLOCK_BACKGROUND, false))
-    var prioritizeGame by mutableStateOf(prefs.getBoolean(GamePrefs.PRIORITIZE_GAME, false))
-    var suggestBackup by mutableStateOf(prefs.getBoolean(GamePrefs.SUGGEST_BACKUP, true))
-    var autoFailover by mutableStateOf(prefs.getBoolean(GamePrefs.AUTO_FAILOVER, false))
-    var abTarget by mutableStateOf(prefs.getString(GamePrefs.AB_TARGET, "") ?: "")
-    var abBefore by mutableStateOf<GameProbe?>(null)
-    var abAfter by mutableStateOf<GameProbe?>(null)
-    var abRunning by mutableStateOf(false)
-    var abError by mutableStateOf("")
-    var rankRunning by mutableStateOf(false)
-    var ranking by mutableStateOf<List<GameRanked>>(emptyList())
-    var backup by mutableStateOf<GameRanked?>(null)
-    var backupDismissedFor by mutableStateOf<String?>(null)
-
-    fun setFlag(key: String, value: Boolean) {
-        when (key) {
-            GamePrefs.BLOCK_BACKGROUND -> blockBackground = value
-            GamePrefs.PRIORITIZE_GAME -> prioritizeGame = value
-            GamePrefs.SUGGEST_BACKUP -> suggestBackup = value
-            GamePrefs.AUTO_FAILOVER -> autoFailover = value
-        }
-        prefs.edit().putBoolean(key, value).apply()
-    }
-}
-
-private fun parseGameTarget(raw: String): Pair<String, Int>? = null
-private fun probeServer(s: Server, count: Int = 5): GameProbe = GameProbe(0,0,0,0)
-private fun probeSamples(count: Int, sample: () -> Int): GameProbe = GameProbe(0,0,0,0)
-private fun serverLoad(s: Server): Int? = null
-private fun httpFirstByteMs(host: String, port: Int, viaTunnel: Boolean): Int = -1
-private fun isStableServer(r: GameProbe): Boolean = false
-private fun gameScore(r: GameProbe, load: Int?): Double = 0.0
-private suspend fun rankServers(list: List<Server>): List<GameRanked> = emptyList()
-
-@Composable
-private fun GameBackupDialog(
-    lang: String,
-    ranked: GameRanked,
-    failedName: String,
-    auto: Boolean,
-    onSwitch: () -> Unit,
-    onDismiss: () -> Unit
-) {}
-
-@Composable
-internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
-    AnimatedSurface(Modifier.fillMaxWidth(), color = ShadowCardBg, shape = RoundedCornerShape(12.dp)) {
-        Column(Modifier.padding(16.dp), content = content)
-    }
-}
-
-@Composable
-private fun GameToolsTab(
-    lang: String,
-    state: GameToolsState,
-    current: Server?,
-    allServers: List<Server>,
-    scope: CoroutineScope,
-    onUseServer: (Server) -> Unit,
-    input: String,
-    message: String,
-    soundEnabled: Boolean,
-    vibrationEnabled: Boolean,
-    onInput: (String) -> Unit,
-    onPaste: () -> Unit,
-    onAdd: () -> Unit,
-    onLang: (String) -> Unit,
-    onSound: (Boolean) -> Unit,
-    onVibration: (Boolean) -> Unit,
-    onClearMeasurements: () -> Unit,
-    prefs: android.content.SharedPreferences,
-    feedback: (FeedbackType) -> Unit,
-    onOpenVip: () -> Unit,
-    vipDaysLeft: Int
-) {
-    val tm = lang == "tm"
-    var showBoosterScreen by remember { mutableStateOf(false) }
-
-    if (showBoosterScreen) {
-        GameBoosterScreen(
-            lang = lang,
-            prefs = prefs,
-            feedback = feedback,
-            onClose = { showBoosterScreen = false }
-        )
-        return
-    }
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(ShadowBgDark)
-            .verticalScroll(rememberScrollState())
-            .padding(18.dp)
-    ) {
-        Text(
-            text = if (tm) "OÝUN MERKEZI" else "OYUN MERKEZİ",
-            color = Color.White,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 2.sp
-        )
-        Text(
-            text = if (tm) "Premium aýratynlyklar we kod ulanmak" else "Premium özellikler ve kod kullanımı",
-            color = ShadowRedNeon,
-            fontSize = 13.sp,
-            letterSpacing = 1.sp
-        )
-        
-        Spacer(Modifier.height(16.dp))
-
-        if (vipDaysLeft > 0) {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF1A0505), ShadowRedDeep)))
-                    .border(1.dp, ShadowRedNeon, RoundedCornerShape(12.dp))
-                    .padding(12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("💎 VIP Kalan Süre: $vipDaysLeft Gün", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
-        } else {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(ShadowCardBg)
-                    .border(1.dp, Color.Gray, RoundedCornerShape(12.dp))
-                    .clickable { onOpenVip() }
-                    .padding(12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("⚠️ VIP Yok - Kullanmak İçin Tıkla", color = Color(0xFFFF4658), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        BoosterHeroCard(
-            lang = lang,
-            prefs = prefs,
-            feedback = feedback
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Brush.horizontalGradient(listOf(ShadowRedDeep, ShadowRedNeon)))
-                .clickable { feedback(FeedbackType.TAP); showBoosterScreen = true },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = if (tm) "GAME BOOSTER PANELINI AÇ" else "GAME BOOSTER PANELİNİ AÇ",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(ShadowCardBg)
-                .border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp))
-                .clickable { feedback(FeedbackType.TAP); onOpenVip() }
-                .padding(20.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🎟️", fontSize = 32.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(ShadowCardBg2)
-                        .border(1.dp, ShadowRedNeon, RoundedCornerShape(10.dp))
-                        .clickable { feedback(FeedbackType.TAP); onOpenVip() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(if (tm) "KODY ULAN" else "KODU KULLAN", color = ShadowRedNeon, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(20.dp))
     }
 }
