@@ -5,10 +5,8 @@ package com.suffershadow.vpn
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.ToneGenerator
-import android.net.Uri
 import android.net.VpnService
 import android.os.Bundle
 import android.os.Handler
@@ -20,14 +18,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,7 +27,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -47,14 +37,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -66,15 +55,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
+import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URLDecoder
@@ -84,19 +66,30 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import org.json.JSONArray
-import java.net.HttpURLConnection
 
-internal val BgDark = Color(0xFF07080D)
-internal val BgTop = Color(0xFF121422)
-internal val CardBg = Color(0xFF121422)
-internal val CardBg2 = Color(0xFF1C1E32)
-internal val PurpleMain = Color(0xFF9D00FF)
-internal val PurpleLight = Color(0xFFD9A0FF)
-internal val PurpleDeep = Color(0xFF5A00B5)
-internal val AccentGreen = Color(0xFF00FFCC)
-internal val RedSoft = Color(0xFFFF3366)
-internal val TextMuted = Color(0xFF8E92A6)
-internal val BorderPurple = Color(0xFF6C00B8)
+// =====================================================================
+// YENİ SİYAH - NEON KIRMIZI RENK PALETİ
+// (Eski mor değişkenler yeni kırmızı sisteme yönlendirildi ki kodun geri kalanı bozulmasın)
+// =====================================================================
+internal val ShadowBgDark = Color(0xFF050505)
+internal val ShadowBgTop = Color(0xFF0F0F11)
+internal val ShadowCardBg = Color(0xFF121418)
+internal val ShadowCardBg2 = Color(0xFF1A1C23)
+internal val ShadowRedNeon = Color(0xFFFF263D)
+internal val ShadowRedDeep = Color(0xFF9F1227)
+
+// Eski isimler (Kodun geri kalanı hata vermesin diye yeni renklere bağlandı)
+internal val BgDark = ShadowBgDark
+internal val BgTop = ShadowBgTop
+internal val CardBg = ShadowCardBg
+internal val CardBg2 = ShadowCardBg2
+internal val PurpleMain = ShadowRedNeon       // Mor yerine Neon Kırmızı
+internal val PurpleLight = Color(0xFFFF4658)  // Açık Mor yerine Parlak Kırmızı
+internal val PurpleDeep = ShadowRedDeep       // Koyu Mor yerine Koyu Kırmızı
+internal val AccentGreen = Color(0xFF20E28B)  
+internal val RedSoft = Color(0xFFFF4658)
+internal val TextMuted = Color(0xFFA0A6B4)
+internal val BorderPurple = Color(0xFF9F1227)
 
 // VPS PROXY BAĞLANTISI
 private const val SUPABASE_URL = "http://46.8.225.27:8080"
@@ -233,7 +226,7 @@ fun pingServer(s: Server): Int {
     }
 }
 
-// VPS ÜZERİNDEN SUNUCU ÇEKME (Hata mesajı gösterme özelliği eklendi)
+// VPS ÜZERİNDEN SUNUCU ÇEKME
 fun fetchRemoteServers(category: String, context: Context, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
@@ -258,13 +251,11 @@ fun fetchRemoteServers(category: String, context: Context, onResult: (List<Serve
                     }
                 }
             } else {
-                // HATA MESAJINI EKRANA YAZDIR
                 Handler(Looper.getMainLooper()).post {
                     Toast.makeText(context, "Sunucu Hatası: ${conn.responseCode}", Toast.LENGTH_LONG).show()
                 }
             }
         } catch (e: Exception) { 
-            // BAĞLANTI HATASINI EKRANA YAZDIR (Örn: Timeout, DNS Hatası)
             Handler(Looper.getMainLooper()).post {
                 Toast.makeText(context, "Bağlantı Hatası: ${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -279,6 +270,7 @@ private fun protocolName(server: Server): String = when {
     else -> "Bilinmiyor"
 }
 
+// 🚀 YENİ PING RENK MANTIĞI (Senin istediğin eşiklere göre)
 private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Color> {
     val tm = lang == "tm"
     if (real && VpnState.delayMs >= 0) {
@@ -287,17 +279,19 @@ private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Col
     if (real) {
         return (if (tm) "Birikdi" else "Bağlandı") to AccentGreen
     }
+    
+    // Ping değerine göre renk ve metin dönme
     return when {
-        p == null -> "Ölçülmedi" to TextMuted
+        p == null || p <= 0 -> "Ölçülmedi" to TextMuted
         p == -2 -> "Ölçülüyor..." to TextMuted
-        p == -1 -> (if (tm) "Port elýeterli däl" else "Port erişilemiyor") to RedSoft
-        else -> (if (tm) "TCP port jogaby • $p ms" else "TCP port yanıtı • $p ms") to when {
-            p < 150 -> AccentGreen
-            p < 400 -> Color(0xFFFFD166)
-            else -> Color(0xFFFF9D55)
-        }
+        p == -1 -> (if (tm) "Port elýeterli däl" else "Port erişilemiyor") to Color(0xFFFF4658)
+        p <= 600 -> "TCP: $p ms" to Color(0xFF20E28B)       // Yeşil
+        p <= 1200 -> "TCP: $p ms" to Color(0xFFFFC247)      // Sarı
+        p <= 3000 -> "TCP: $p ms" to Color(0xFFFF4658)      // Kırmızı
+        else -> "TCP: $p ms" to Color(0xFF9F1227)           // Koyu Kırmızı
     }
 }
+
 @Composable
 private fun rememberUiFeedback(soundEnabled: Boolean, vibrationEnabled: Boolean): (FeedbackType) -> Unit {
     val haptic = LocalHapticFeedback.current
@@ -346,7 +340,6 @@ fun rememberVpnConnect(): (Server) -> Unit {
         }
     }
 }
-
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
@@ -385,7 +378,6 @@ fun AppRoot() {
     val builtInSocial = remember { mutableStateListOf<Server>() }
     val builtInPubg = remember { mutableStateListOf<Server>() }
 
-    // context parametresi eklendi (Hata mesajı göstermek için)
     val loadRemoteData = {
         fetchRemoteServers("social", context) { fetched ->
             builtInSocial.clear()
@@ -452,177 +444,180 @@ fun AppRoot() {
             vpnTimeLeft = 7200
         }
     }
+    
     val connect = rememberVpnConnect()
-val allServers = servers + builtInSocial + builtInPubg
-val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
-val save: () -> Unit = {
-    prefs.edit()
-        .putString("links", servers.joinToString("\n") { it.link })
-        .putInt("sel", selected)
-        .apply()
-}
-
-val measure: (Server) -> Unit = { server ->
-    pings[server.link] = -2
-    thread {
-        val result = pingServer(server)
-        Handler(Looper.getMainLooper()).post { pings[server.link] = result }
+    val allServers = servers + builtInSocial + builtInPubg
+    val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
+    
+    val save: () -> Unit = {
+        prefs.edit()
+            .putString("links", servers.joinToString("\n") { it.link })
+            .putInt("sel", selected)
+            .apply()
     }
-}
 
-LaunchedEffect(servers) { servers.forEach { measure(it) } }
-
-val selectedIndex = if (allServers.isEmpty()) -1 else selected.coerceIn(0, allServers.size - 1)
-val current = allServers.getOrNull(selectedIndex)
-
-LaunchedEffect(current?.link) {
-    prefs.edit()
-        .putString("active_name", current?.name ?: "")
-        .putString("active_host", current?.host ?: "")
-        .putInt("active_port", current?.port ?: 0)
-        .apply()
-}
-
-val gameState = remember { GameToolsState(prefs) }
-val gameScope = rememberCoroutineScope()
-
-LaunchedEffect(current?.link) {
-    gameState.history.clear()
-    gameState.backupDismissedFor = null
-    val target = current ?: return@LaunchedEffect
-    while (true) {
-        val ms = withContext(Dispatchers.IO) { pingServer(target) }
-        val now = System.currentTimeMillis()
-        gameState.history.add(GamePingSample(now, ms))
-        while (gameState.history.isNotEmpty() && gameState.history[0].timeMs < now - 30 * 60_000L) {
-            gameState.history.removeAt(0)
+    val measure: (Server) -> Unit = { server ->
+        pings[server.link] = -2
+        thread {
+            val result = pingServer(server)
+            Handler(Looper.getMainLooper()).post { pings[server.link] = result }
         }
-        delay(3000L)
     }
-}
 
-val failStreak = gameState.history.takeLastWhile { it.ms < 0 }.size
-val tunnelAlive = VpnState.status == VpnState.CONNECTED && VpnState.delayMs.toInt() >= 0
-val needBackup = gameState.suggestBackup && current != null && failStreak >= 5 && !tunnelAlive &&
-    gameState.backupDismissedFor != current.link
-LaunchedEffect(needBackup, current?.link) {
-    if (needBackup && current != null) {
-        val others = allServers.filter { it.link != current.link }.take(20)
-        gameState.backup = rankServers(others).firstOrNull { it.result.avg >= 0 && it.result.lossPct < 50 }
-    } else {
-        gameState.backup = null
+    LaunchedEffect(servers) { servers.forEach { measure(it) } }
+
+    val selectedIndex = if (allServers.isEmpty()) -1 else selected.coerceIn(0, allServers.size - 1)
+    val current = allServers.getOrNull(selectedIndex)
+
+    LaunchedEffect(current?.link) {
+        prefs.edit()
+            .putString("active_name", current?.name ?: "")
+            .putString("active_host", current?.host ?: "")
+            .putInt("active_port", current?.port ?: 0)
+            .apply()
     }
-}
 
-BackHandler(enabled = showServers) { showServers = false }
+    val gameState = remember { GameToolsState(prefs) }
+    val gameScope = rememberCoroutineScope()
 
-val onSelect: (Int) -> Unit = { index ->
-    feedback(FeedbackType.TAP)
-    selected = index
-    save()
-    showServers = false
-    val server = allServers.getOrNull(index)
-    if (server != null) {
-        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
-            stopVpnService(context)
-            Handler(Looper.getMainLooper()).postDelayed({ connect(server) }, 900)
+    LaunchedEffect(current?.link) {
+        gameState.history.clear()
+        gameState.backupDismissedFor = null
+        val target = current ?: return@LaunchedEffect
+        while (true) {
+            val ms = withContext(Dispatchers.IO) { pingServer(target) }
+            val now = System.currentTimeMillis()
+            gameState.history.add(GamePingSample(now, ms))
+            while (gameState.history.isNotEmpty() && gameState.history[0].timeMs < now - 30 * 60_000L) {
+                gameState.history.removeAt(0)
+            }
+            delay(3000L)
+        }
+    }
+
+    val failStreak = gameState.history.takeLastWhile { it.ms < 0 }.size
+    val tunnelAlive = VpnState.status == VpnState.CONNECTED && VpnState.delayMs.toInt() >= 0
+    val needBackup = gameState.suggestBackup && current != null && failStreak >= 5 && !tunnelAlive &&
+        gameState.backupDismissedFor != current.link
+    LaunchedEffect(needBackup, current?.link) {
+        if (needBackup && current != null) {
+            val others = allServers.filter { it.link != current.link }.take(20)
+            gameState.backup = rankServers(others).firstOrNull { it.result.avg >= 0 && it.result.lossPct < 50 }
         } else {
-            connect(server)
+            gameState.backup = null
         }
     }
-}
 
-val onDelete: (Int) -> Unit = { index ->
-    feedback(FeedbackType.TAP)
-    val server = servers.getOrNull(index)
-    if (server != null) {
-        if (index == selectedIndex && (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING)) {
-            stopVpnService(context)
-        }
-        pings.remove(server.link)
-        servers.removeAt(index)
-        selected = when {
-            servers.isEmpty() -> 0
-            index < selected -> selected - 1
-            selected >= servers.size -> servers.size - 1
-            else -> selected
-        }
+    BackHandler(enabled = showServers) { showServers = false }
+
+    val onSelect: (Int) -> Unit = { index ->
+        feedback(FeedbackType.TAP)
+        selected = index
         save()
-    }
-}
-
-val onAdd: () -> Unit = {
-    feedback(FeedbackType.TAP)
-    var added = 0
-    input.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
-        if (line.startsWith("http://") || line.startsWith("https://")) {
-            fetchSubscriptionServers(line) { fetchedList ->
-                var subAdded = 0
-                fetchedList.forEach { srv ->
-                    if (servers.none { it.link == srv.link }) {
-                        servers.add(srv)
-                        measure(srv)
-                        subAdded++
-                    }
-                }
-                if (subAdded > 0) {
-                    save()
-                    message = if (lang == "tm") "$subAdded serwer goşuldy (Abonelik)" else "$subAdded sunucu eklendi (Abonelik)"
-                } else {
-                    message = if (lang == "tm") "Abonelik boş" else "Abonelik boş veya zaten ekli."
-                }
-            }
-        } else {
-            val server = parseServer(line, isBuiltIn = false)
-            if (server != null && servers.none { it.link == server.link }) {
-                servers.add(server)
-                measure(server)
-                added++
+        showServers = false
+        val server = allServers.getOrNull(index)
+        if (server != null) {
+            if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+                stopVpnService(context)
+                Handler(Looper.getMainLooper()).postDelayed({ connect(server) }, 900)
+            } else {
+                connect(server)
             }
         }
     }
-    if (added > 0) {
-        input = ""
-        save()
-        message = if (lang == "tm") "$added serwer goşuldy" else "$added sunucu eklendi"
-    } else if (!input.contains("http")) {
-        message = if (lang == "tm") "Goşup bolmady." else "Eklenemedi."
-    }
-    input = ""
-}
 
-val switchToServer: (Server) -> Unit = { target ->
-    val idx = allServers.indexOfFirst { it.link == target.link }
-    if (idx >= 0) {
-        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
-            onSelect(idx)
-            gameScope.launch {
-                delay(15000L)
-                if (VpnState.status != VpnState.CONNECTED) {
-                    android.widget.Toast.makeText(
-                        context,
-                        if (lang == "tm") "Ätiýaçlyk serwere geçip bolmady. Gaýtadan birikmegi synanyşyň." else "Yedek sunucuya geçilemedi. Tekrar bağlanmayı dene.",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
-                }
+    val onDelete: (Int) -> Unit = { index ->
+        feedback(FeedbackType.TAP)
+        val server = servers.getOrNull(index)
+        if (server != null) {
+            if (index == selectedIndex && (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING)) {
+                stopVpnService(context)
             }
-        } else {
-            selected = idx
+            pings.remove(server.link)
+            servers.removeAt(index)
+            selected = when {
+                servers.isEmpty() -> 0
+                index < selected -> selected - 1
+                selected >= servers.size -> servers.size - 1
+                else -> selected
+            }
             save()
         }
     }
-}
 
-gameState.backup?.let { b ->
-    GameBackupDialog(
-        lang = lang,
-        ranked = b,
-        failedName = current?.name ?: "",
-        auto = gameState.autoFailover,
-        onSwitch = { gameState.backup = null; switchToServer(b.server) },
-        onDismiss = { gameState.backupDismissedFor = current?.link; gameState.backup = null }
-    )
-}
+    val onAdd: () -> Unit = {
+        feedback(FeedbackType.TAP)
+        var added = 0
+        input.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
+            if (line.startsWith("http://") || line.startsWith("https://")) {
+                fetchSubscriptionServers(line) { fetchedList ->
+                    var subAdded = 0
+                    fetchedList.forEach { srv ->
+                        if (servers.none { it.link == srv.link }) {
+                            servers.add(srv)
+                            measure(srv)
+                            subAdded++
+                        }
+                    }
+                    if (subAdded > 0) {
+                        save()
+                        message = if (lang == "tm") "$subAdded serwer goşuldy (Abonelik)" else "$subAdded sunucu eklendi (Abonelik)"
+                    } else {
+                        message = if (lang == "tm") "Abonelik boş" else "Abonelik boş veya zaten ekli."
+                    }
+                }
+            } else {
+                val server = parseServer(line, isBuiltIn = false)
+                if (server != null && servers.none { it.link == server.link }) {
+                    servers.add(server)
+                    measure(server)
+                    added++
+                }
+            }
+        }
+        if (added > 0) {
+            input = ""
+            save()
+            message = if (lang == "tm") "$added serwer goşuldy" else "$added sunucu eklendi"
+        } else if (!input.contains("http")) {
+            message = if (lang == "tm") "Goşup bolmady." else "Eklenemedi."
+        }
+        input = ""
+    }
+
+    val switchToServer: (Server) -> Unit = { target ->
+        val idx = allServers.indexOfFirst { it.link == target.link }
+        if (idx >= 0) {
+            if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+                onSelect(idx)
+                gameScope.launch {
+                    delay(15000L)
+                    if (VpnState.status != VpnState.CONNECTED) {
+                        android.widget.Toast.makeText(
+                            context,
+                            if (lang == "tm") "Ätiýaçlyk serwere geçip bolmady. Gaýtadan birikmegi synanyşyň." else "Yedek sunucuya geçilemedi. Tekrar bağlanmayı dene.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } else {
+                selected = idx
+                save()
+            }
+        }
+    }
+
+    gameState.backup?.let { b ->
+        GameBackupDialog(
+            lang = lang,
+            ranked = b,
+            failedName = current?.name ?: "",
+            auto = gameState.autoFailover,
+            onSwitch = { gameState.backup = null; switchToServer(b.server) },
+            onDismiss = { gameState.backupDismissedFor = current?.link; gameState.backup = null }
+        )
+    }
+    
     if (sessionExpired) {
         AlertDialog(
             onDismissRequest = { sessionExpired = false },
@@ -634,8 +629,7 @@ gameState.backup?.let { b ->
             confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
         )
     }
-
-    if (showVipScreen) {
+        if (showVipScreen) {
         VipScreen(
             prefs = prefs,
             onVipActivated = {
@@ -651,36 +645,37 @@ gameState.backup?.let { b ->
         containerColor = BgDark,
         contentColor = Color.White,
         bottomBar = {
+            // SİYAH - KIRMIZI NEON ALT MENÜ
             NavigationBar(
-                containerColor = Color(0xFF10121A),
+                containerColor = ShadowBgTop, // Çok koyu siyah/gri arka plan
                 contentColor = TextMuted,
                 tonalElevation = 0.dp
             ) {
                 val navColors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = PurpleLight,
-                    selectedTextColor = Color.White,
-                    indicatorColor = Color(0xFF2A1B40),
-                    unselectedIconColor = TextMuted,
+                    selectedIconColor = ShadowRedNeon,      // Seçili ikon: Neon Kırmızı
+                    selectedTextColor = Color.White,        // Seçili yazı: Beyaz
+                    indicatorColor = Color(0xFF330000),     // Seçili arka plan kapsülü: Koyu Kırmızı Cam
+                    unselectedIconColor = TextMuted,        // Seçili değilse: Gri
                     unselectedTextColor = TextMuted
                 )
                 NavigationBarItem(
                     selected = tab == 0,
                     onClick = { feedback(FeedbackType.TAP); tab = 0; showServers = false },
-                    icon = { NavGlyph("home", if (tab == 0) PurpleLight else TextMuted, Modifier.size(24.dp)) },
+                    icon = { NavGlyph("home", if (tab == 0) ShadowRedNeon else TextMuted, Modifier.size(24.dp)) },
                     label = { Text(if (lang == "tm") "Baş sahypa" else "Ana Menü", fontSize = 11.sp) },
                     colors = navColors
                 )
                 NavigationBarItem(
                     selected = tab == 1,
                     onClick = { feedback(FeedbackType.TAP); tab = 1; showServers = false },
-                    icon = { NavGlyph("game", if (tab == 1) PurpleLight else TextMuted, Modifier.size(24.dp)) },
+                    icon = { NavGlyph("game", if (tab == 1) ShadowRedNeon else TextMuted, Modifier.size(24.dp)) },
                     label = { Text(if (lang == "tm") "Oýun" else "Oyun", fontSize = 11.sp) },
                     colors = navColors
                 )
                 NavigationBarItem(
                     selected = tab == 2,
                     onClick = { feedback(FeedbackType.TAP); tab = 2; showServers = false },
-                    icon = { NavGlyph("profile", if (tab == 2) PurpleLight else TextMuted, Modifier.size(24.dp)) },
+                    icon = { NavGlyph("profile", if (tab == 2) ShadowRedNeon else TextMuted, Modifier.size(24.dp)) },
                     label = { Text(if (lang == "tm") "Profil" else "Profil", fontSize = 11.sp) },
                     colors = navColors
                 )
@@ -691,7 +686,8 @@ gameState.backup?.let { b ->
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(BgTop, BgDark, BgDark)))
+                // ARKA PLAN RENGİ: Tamamen siyah ve hafif üstten koyu gri gradient
+                .background(Brush.verticalGradient(listOf(ShadowBgTop, ShadowBgDark, ShadowBgDark)))
         ) {
             when {
                 tab == 0 && !showServers -> HomeTab(
@@ -716,7 +712,7 @@ gameState.backup?.let { b ->
                     },
                     onOpenServers = { feedback(FeedbackType.TAP); showServers = true }
                 )
-                // Güncelle ve Test Et Mantığı Ayrıldı
+                
                 tab == 0 && showServers -> ServersTab(
                     lang = lang,
                     customServers = servers,
@@ -727,12 +723,10 @@ gameState.backup?.let { b ->
                     onSelect = onSelect,
                     onDelete = onDelete,
                     onUpdate = {
-                        // SADECE SUNUCULARI SUPABASE'DEN ÇEKER
                         feedback(FeedbackType.TAP)
                         loadRemoteData()
                     },
                     onTest = {
-                        // SADECE PING ATAR (GÜNCELLEME YAPMAZ)
                         feedback(FeedbackType.TAP)
                         (servers + builtInSocial + builtInPubg).forEach { measure(it) }
                     },
@@ -755,6 +749,7 @@ gameState.backup?.let { b ->
                         }
                     }
                 )
+                
                 tab == 1 -> GameToolsTab(
                     lang = lang,
                     state = gameState,
@@ -806,19 +801,13 @@ private fun HomeTab(
     val tm = lang == "tm"
     val connected = VpnState.status == VpnState.CONNECTED
     val busy = VpnState.status == VpnState.CONNECTING
-    val pulseTransition = rememberInfiniteTransition()
-    val pulse by pulseTransition.animateFloat(
-        initialValue = 0.97f,
-        targetValue = 1.035f,
-        animationSpec = infiniteRepeatable(tween(1150, easing = FastOutSlowInEasing), RepeatMode.Reverse)
-    )
-    val buttonScale = if (busy) pulse else 1f
-    val accent = if (connected) AccentGreen else PurpleMain
 
+    // Süre formatlama
     val hours = timeLeft / 3600
     val minutes = (timeLeft % 3600) / 60
     val seconds = timeLeft % 60
     val timeString = String.format("%02d:%02d:%02d", hours, minutes, seconds)
+    
     val statusText = when {
         connected -> "$timeString • " + (if (tm) "BIRIKDI" else "BAĞLANILDI")
         busy -> if (tm) "BIRIGÝÄR" else "BAĞLANILIYOR"
@@ -827,121 +816,226 @@ private fun HomeTab(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 18.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        BrandHeader()
-        Spacer(Modifier.height(14.dp))
-        StatusPill(
-            text = statusText,
-            color = when {
-                connected && VpnState.delayMs >= 0 -> AccentGreen
-                connected -> Color(0xFFFFD166)
-                busy -> PurpleLight
-                else -> TextMuted
-            }
-        )
-        Spacer(Modifier.height(26.dp))
-
-        Box(
-            modifier = Modifier.size(244.dp).graphicsLayer { scaleX = buttonScale; scaleY = buttonScale },
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize().clip(CircleShape).background(
-                    Brush.radialGradient(listOf(accent.copy(alpha = 0.34f), PurpleMain.copy(alpha = 0.10f), Color.Transparent))
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                // Arka planda hafif bir kırmızı/siyah derinlik efekti
+                Brush.radialGradient(
+                    colors = listOf(Color(0xFF1A0000), ShadowBgDark),
+                    center = Offset(0.5f, 0.3f),
+                    radius = 1200f
                 )
             )
-            Box(
-                modifier = Modifier.size(202.dp).border(1.dp, accent.copy(alpha = 0.46f), CircleShape).padding(10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                AnimatedSurface(
-                    modifier = Modifier.fillMaxSize(),
-                    shape = CircleShape,
-                    brush = Brush.radialGradient(listOf(Color(0xFF252044), Color(0xFF100F24), Color(0xFF080B18))),
-                    onClick = onToggle,
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // 1. ÜST BAŞLIK (Logo ve Metin)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // "S" Logosu (Neon Kırmızı Kutu)
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF330000), ShadowBgDark)))
+                        .border(1.dp, ShadowRedDeep, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(), 
-                        horizontalAlignment = Alignment.CenterHorizontally, 
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        PowerGlyph(accent, Modifier.size(43.dp))
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = when {
-                                connected -> if (tm) "ÖÇÜR" else "KAPAT"
-                                busy -> if (tm) "BIRIGÝÄR" else "BAĞLANILIYOR"
-                                else -> if (tm) "GOŞUL" else "BAĞLAN"
-                            },
-                            color = Color.White,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = if (busy) 15.sp else 16.sp, 
-                            letterSpacing = 1.2.sp,
-                            textAlign = TextAlign.Center, 
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    Text("S", color = ShadowRedNeon, fontSize = 32.sp, fontWeight = FontWeight.Black)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text("SUFFER", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp, lineHeight = 24.sp)
+                    Text("SHADOW", color = ShadowRedNeon, fontSize = 22.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp, lineHeight = 24.sp)
+                    Text("F A S T   V P N", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
+                }
+            }
+            // Sağ üst ikonlar (Zil ve Ayar)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(ShadowCardBg).border(1.dp, Color(0xFF333333), CircleShape), contentAlignment = Alignment.Center) {
+                    Text("🔔", fontSize = 16.sp)
+                }
+                Box(Modifier.size(36.dp).clip(CircleShape).background(ShadowCardBg).border(1.dp, Color(0xFF333333), CircleShape), contentAlignment = Alignment.Center) {
+                    Text("⚙️", fontSize = 16.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 2. DURUM ÇUBUĞU
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(ShadowCardBg)
+                .border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp))
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(if (connected) ShadowRedNeon else Color.DarkGray))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(statusText, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Text("›", color = ShadowRedNeon, fontSize = 24.sp, fontWeight = FontWeight.Light)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(30.dp))
+
+        // 3. DEV NEON BAĞLAN BUTONU (Dönen halkalar ve Işık Efekti)
+        val infinite = rememberInfiniteTransition()
+        val pulse by infinite.animateFloat(0.4f, 1f, infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse))
+        val sweep by infinite.animateFloat(0f, 360f, infiniteRepeatable(tween(4000, easing = LinearEasing)))
+        val btnScale by animateFloatAsState(if (busy) 0.96f else 1f, tween(500))
+
+        Box(
+            modifier = Modifier
+                .size(240.dp)
+                .scale(btnScale)
+                .clip(CircleShape)
+                .background(Brush.radialGradient(colors = listOf(Color(0xFF1A0000), ShadowBgDark)))
+                .clickable { onToggle() }
+                .drawBehind {
+                    val stroke = 2.dp.toPx()
+                    // Dış Işık
+                    drawCircle(color = ShadowRedNeon.copy(alpha = pulse * 0.3f), style = Stroke(stroke * 3), radius = size.minDimension / 2)
+                    // Dönen Kırmızı Yay
+                    drawArc(
+                        color = ShadowRedNeon,
+                        startAngle = sweep,
+                        sweepAngle = 80f,
+                        useCenter = false,
+                        style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
+                        topLeft = Offset(4.dp.toPx(), 4.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(size.width - 8.dp.toPx(), size.height - 8.dp.toPx())
+                    )
+                }
+                .border(1.dp, ShadowRedNeon.copy(alpha = 0.5f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (busy) {
+                    CircularProgressIndicator(color = ShadowRedNeon, modifier = Modifier.size(56.dp), strokeWidth = 4.dp)
+                } else {
+                    // Power İkonu
+                    androidx.compose.foundation.Canvas(modifier = Modifier.size(56.dp)) {
+                        val strokeW = 4.dp.toPx()
+                        drawArc(color = ShadowRedNeon, startAngle = 135f, sweepAngle = 270f, useCenter = false, topLeft = Offset(strokeW, strokeW), size = androidx.compose.ui.geometry.Size(size.width - strokeW*2, size.height - strokeW*2), style = Stroke(width = strokeW, cap = StrokeCap.Round))
+                        drawLine(color = ShadowRedNeon, start = Offset(size.width/2, 0f), end = Offset(size.width/2, size.height*0.5f), strokeWidth = strokeW, cap = StrokeCap.Round)
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = when {
+                        connected -> if (tm) "ÖÇÜR" else "KAPAT"
+                        busy -> if (tm) "BIRIGÝÄR" else "BAĞLANILIYOR"
+                        else -> if (tm) "GOŞUL" else "BAĞLAN"
+                    },
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(30.dp))
+
+        // 4. SUNUCU KARTI (Bayraklı, Neon Kırmızı Çerçeveli)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(84.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(ShadowCardBg)
+                .border(width = 1.dp, brush = Brush.linearGradient(listOf(ShadowRedNeon, Color(0xFF441115), ShadowRedNeon)), shape = RoundedCornerShape(16.dp))
+                .clickable { onOpenServers() }
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                // Bayrak Görseli (Şimdilik yer tutucu, sen drawable ekleyince resim çıkacak)
+                Box(Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)), contentAlignment = Alignment.Center) {
+                    Text("🌐", fontSize = 20.sp) 
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(current?.name ?: "Sunucu Seçilmedi", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("⚡", fontSize = 12.sp, color = ShadowRedNeon)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(current?.let { protocolName(it) } ?: "Bilinmiyor", color = ShadowRedNeon, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+                Text("›", color = ShadowRedNeon, fontSize = 32.sp, fontWeight = FontWeight.Light)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 5. ALT METRİK KARTLARI (TCP ve Bağlantı Durumu)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // TCP Kartı
+            Box(
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(Color(0xFF2A0000)), contentAlignment = Alignment.Center) {
+                        Text("🔗", fontSize = 16.sp)
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(if (ping != null && ping >= 0) "$ping ms" else "—", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("TCP port yanıtı", color = TextMuted, fontSize = 11.sp)
+                    }
+                }
+            }
+            // Durum Kartı
+            Box(
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(Color(0xFF2A0000)), contentAlignment = Alignment.Center) {
+                        Text("⏱️", fontSize = 16.sp)
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(if (connected) "Açık" else "Kapalı", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("Bağlantı durumu", color = TextMuted, fontSize = 11.sp)
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(22.dp))
-        AnimatedSurface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            color = CardBg,
-            onClick = onOpenServers
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 6. SUNUCULAR BUTONU (Görseldeki gibi kırmızı neon)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon, Color(0xFFFF5360))))
+                .border(1.dp, Color(0x88FF7A86), RoundedCornerShape(12.dp))
+                .clickable { onOpenServers() },
+            contentAlignment = Alignment.Center
         ) {
-            Row(Modifier.padding(horizontal = 18.dp, vertical = 17.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF2A1B40)),
-                    contentAlignment = Alignment.Center
-                ) { Text("S", color = PurpleLight, fontSize = 23.sp, fontWeight = FontWeight.Black) }
-                Spacer(Modifier.width(13.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(current?.name ?: if (tm) "Serwer saýlanmady" else "Sunucu seçilmedi", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Spacer(Modifier.height(4.dp))
-                    Text(current?.let { protocolName(it) } ?: if (tm) "Serwer saýlaň" else "Bir sunucu seçin", color = TextMuted, fontSize = 12.sp)
-                }
-                Text("›", color = PurpleLight, fontSize = 34.sp, fontWeight = FontWeight.Light)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("▤", color = Color.White, fontSize = 20.sp)
+                Spacer(Modifier.width(10.dp))
+                Text("Sunucular", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Spacer(Modifier.width(10.dp))
+                Text("›", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Light)
             }
         }
-
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            InfoPill(
-                modifier = Modifier.weight(1f),
-                title = if (connected && VpnState.delayMs >= 0) "${VpnState.delayMs} ms" else if (ping != null && ping >= 0) "$ping ms" else "—",
-                subtitle = if (connected && VpnState.delayMs >= 0) (if (tm) "Tunel gijikmesi" else "Tünel gecikmesi") else (if (tm) "TCP port jogaby" else "TCP port yanıtı")
-            )
-            InfoPill(
-                modifier = Modifier.weight(1f),
-                title = when {
-                    connected && VpnState.delayMs >= 0 -> if (tm) "Birikdi" else "Bağlandı"
-                    connected -> if (tm) "Barlaň" else "Kontrol et"
-                    busy -> if (tm) " garaşýar" else "Bekliyor"
-                    else -> if (tm) "Öçük" else "Kapalı"
-                },
-                subtitle = if (tm) "Baglanyşyk ýagdaýy" else "Bağlantı durumu"
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-        NeonButton(
-            text = if (tm) "Serwerler" else "Sunucular",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onOpenServers,
-            leading = "▤"
-        )
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = if (tm) "Güýçli baglanyşyk. Ýönekeý dolandyryş." else "Güçlü bağlantı. Kolay kontrol.",
-            color = TextMuted,
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
+        
+        Spacer(Modifier.height(30.dp))
     }
 }
 @Composable
@@ -962,7 +1056,7 @@ private fun ServersTab(
     val tm = lang == "tm"
     val connected = VpnState.status == VpnState.CONNECTED
     
-    var mainTab by remember { mutableStateOf(0) } // 0: İçindekiler, 1: Özel
+    var mainTab by remember { mutableStateOf(0) } // 0: Otomatik (İçindekiler), 1: Özel
     var categoryTab by remember { mutableStateOf(0) } // 0: Sosyal, 1: PUBG
     var subUrlInput by remember { mutableStateOf("") }
     var showSubDialog by remember { mutableStateOf(false) }
@@ -976,137 +1070,187 @@ private fun ServersTab(
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         
+        // ÜST BAŞLIK VE BUTONLAR
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), 
             verticalAlignment = Alignment.CenterVertically
         ) {
-            NeonButton(text = "‹", modifier = Modifier.size(44.dp), onClick = onBack, secondary = true)
-            Spacer(Modifier.weight(1f))
-            Text(if (tm) "Serwerler" else "Sunucular", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Spacer(Modifier.weight(1f))
+            // Geri Butonu (Neon Çerçeveli)
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ShadowCardBg)
+                    .border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
+                    .clickable { onBack() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("‹", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            }
             
-            // YENİ TASARIM: İkon ve Altında Yazı Olan Butonlar
+            Spacer(modifier = Modifier.weight(1f))
+            Text(if (tm) "Serwerler" else "Sunucular", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Spacer(modifier = Modifier.weight(1f))
+            
+            // Güncelle ve Test Et Butonları
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // GÜNCELLE BUTONU
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AnimatedSurface(
-                        modifier = Modifier.size(44.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1C1E32),
-                        onClick = onUpdate
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("🔄", fontSize = 20.sp)
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp)).clickable { onUpdate() },
+                        contentAlignment = Alignment.Center
+                    ) { Text("🔄", fontSize = 20.sp) }
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text("Güncelle", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                 }
-                
-                // TEST ET BUTONU
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AnimatedSurface(
-                        modifier = Modifier.size(44.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1C1E32),
-                        onClick = onTest
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("⚡", fontSize = 20.sp)
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp)).clickable { onTest() },
+                        contentAlignment = Alignment.Center
+                    ) { Text("⚡", fontSize = 20.sp) }
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text("Test Et", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
 
+        // SEKME BUTONLARI (Otomatik ve Özel)
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            NeonButton(
-                text = if (tm) "Içindekiler" else "İçindekiler", 
-                modifier = Modifier.weight(1f), 
-                onClick = { mainTab = 0 }, 
-                secondary = mainTab != 0
-            )
-            NeonButton(
-                text = if (tm) "Özel" else "Özel", 
-                modifier = Modifier.weight(1f), 
-                onClick = { mainTab = 1 }, 
-                secondary = mainTab != 1
-            )
-        }
-
-        if (mainTab == 0) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                NeonButton(
-                    text = if (tm) "Sosial Media" else "Sosyal Medya", 
-                    modifier = Modifier.weight(1f), 
-                    onClick = { categoryTab = 0 }, 
-                    secondary = categoryTab != 0
-                )
-                NeonButton(
-                    text = "PUBG", 
-                    modifier = Modifier.weight(1f), 
-                    onClick = { categoryTab = 1 }, 
-                    secondary = categoryTab != 1
-                )
+            val isMainTab0 = mainTab == 0
+            Box(
+                modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
+                    .background(if (isMainTab0) Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)) else Brush.linearGradient(listOf(ShadowCardBg, ShadowCardBg)))
+                    .border(1.dp, if (isMainTab0) ShadowRedNeon else Color(0xFF333333), RoundedCornerShape(12.dp))
+                    .clickable { mainTab = 0 },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(if (tm) "Otomatik" else "Otomatik", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+            val isMainTab1 = mainTab == 1
+            Box(
+                modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
+                    .background(if (isMainTab1) Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)) else Brush.linearGradient(listOf(ShadowCardBg, ShadowCardBg)))
+                    .border(1.dp, if (isMainTab1) ShadowRedNeon else Color(0xFF333333), RoundedCornerShape(12.dp))
+                    .clickable { mainTab = 1 },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(if (tm) "Özel" else "Özel", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
         }
 
+        // ALT KATEGORİ SEKMELERİ (Sosyal Medya ve PUBG - Sadece Otomatik'te görünür)
+        if (mainTab == 0) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val isCat0 = categoryTab == 0
+                Box(
+                    modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
+                        .background(if (isCat0) Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)) else Brush.linearGradient(listOf(ShadowCardBg, ShadowCardBg)))
+                        .border(1.dp, if (isCat0) ShadowRedNeon else Color(0xFF333333), RoundedCornerShape(12.dp))
+                        .clickable { categoryTab = 0 },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Sosyal Medya", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+                val isCat1 = categoryTab == 1
+                Box(
+                    modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
+                        .background(if (isCat1) Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)) else Brush.linearGradient(listOf(ShadowCardBg, ShadowCardBg)))
+                        .border(1.dp, if (isCat1) ShadowRedNeon else Color(0xFF333333), RoundedCornerShape(12.dp))
+                        .clickable { categoryTab = 1 },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("PUBG", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+        }
+
+        // ABONELİK EKLE BUTONU (Sadece Özel sekmesinde)
         if (mainTab == 1) {
             Spacer(Modifier.height(8.dp))
-            NeonButton(
-                text = if (tm) "Abonelik Linki Ekle" else "Abonelik Linki Ekle",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { showSubDialog = true },
-                secondary = true
-            )
+            Box(
+                modifier = Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp))
+                    .background(ShadowCardBg).border(1.dp, ShadowRedNeon, RoundedCornerShape(12.dp))
+                    .clickable { showSubDialog = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(if (tm) "Abonelik Linki Ekle" else "Abonelik Linki Ekle", color = ShadowRedNeon, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
             Spacer(Modifier.height(8.dp))
         }
 
+        // LİSTE
         if (currentList.isEmpty()) {
-            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
-                Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("○", color = PurpleLight, fontSize = 34.sp)
+            Box(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(30.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("○", color = ShadowRedNeon, fontSize = 34.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(if (tm) "Serwer ýok" else "Henüz sunucu yok", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         if (mainTab == 0) (if(tm) "Uzakdan kodlar ýüklenýär..." else "Uzaktan sunucular yükleniyor veya henüz eklenmedi.")
-                        else (if (tm) "Aşakdan abonelik goşuň." else "Yukarıdan abonelik linki ekleyin."), 
+                        else (if (tm) "Ýokardan abonelik goşuň." else "Yukarıdan abonelik linki ekleyin."), 
                         color = TextMuted, fontSize = 13.sp, textAlign = TextAlign.Center
                     )
                 }
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) {
                 itemsIndexed(currentList) { index, server ->
                     val globalIndex = allServers.indexOfFirst { it.link == server.link }
                     val isSelected = globalIndex == selected
-                    val status = serverStatus(pings[server.link], isSelected && connected, lang)
+                    val pingValue = pings[server.link]
                     
-                    AnimatedSurface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = if (isSelected) Color(0xFF2A1B40) else CardBg,
-                        shape = RoundedCornerShape(12.dp),
-                        onClick = { onSelect(globalIndex) }
+                    // Sunucu Kartı
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(84.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (isSelected) Color(0xFF1A0505) else ShadowCardBg)
+                            .border(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                brush = if (isSelected) Brush.linearGradient(listOf(ShadowRedNeon, Color(0xFF9C1027))) else Brush.linearGradient(listOf(Color(0xFF333333), Color(0xFF111111))),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .clickable { onSelect(globalIndex) }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(Modifier.padding(start = 15.dp, top = 13.dp, bottom = 13.dp, end = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(server.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Spacer(Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(protocolName(server), color = PurpleLight, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                    Text("  •  ", color = TextMuted, fontSize = 11.sp)
-                                    Text(status.first, color = status.second, fontSize = 12.sp)
-                                }
+                        // Bayrak Yer Tutucusu
+                        Box(
+                            modifier = Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)),
+                            contentAlignment = Alignment.Center
+                        ) { Text("🌐", fontSize = 20.sp) }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        // İsim ve Protokol
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(server.name, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(protocolName(server), color = ShadowRedNeon, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text("  •  ", color = TextMuted, fontSize = 12.sp)
+                                val status = serverStatus(pingValue, isSelected && connected, lang)
+                                Text(status.first, color = status.second, fontSize = 12.sp)
                             }
-                            if (isSelected) {
-                                Text("✓", color = AccentGreen, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.width(7.dp))
-                            }
+                        }
+
+                        // Sağ Taraf (Anten / Sil Butonu)
+                        Column(horizontalAlignment = Alignment.End) {
                             if (!server.isBuiltIn) {
-                                TextButton(onClick = { onDelete(customServers.indexOf(server)) }) {
-                                    Text(if (tm) "Poz" else "Sil", color = RedSoft, fontWeight = FontWeight.SemiBold)
+                                Box(
+                                    modifier = Modifier.size(32.dp).clip(CircleShape).background(Color(0xFFFF4658).copy(alpha = 0.2f)).clickable { onDelete(customServers.indexOf(server)) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("✕", color = Color(0xFFFF4658), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                 }
+                            } else {
+                                // Görseldeki anten ikonu (Ping rengine göre)
+                                val antennaColor = serverStatus(pingValue, isSelected && connected, lang).second
+                                Text("📶", fontSize = 20.sp, color = antennaColor)
                             }
                         }
                     }
@@ -1115,10 +1259,11 @@ private fun ServersTab(
         }
     }
 
+    // ABONELİK DİYALOĞU
     if (showSubDialog) {
         AlertDialog(
             onDismissRequest = { showSubDialog = false },
-            containerColor = CardBg,
+            containerColor = ShadowCardBg,
             title = { Text("Abonelik Linki", color = Color.White) },
             text = {
                 OutlinedTextField(
@@ -1126,7 +1271,12 @@ private fun ServersTab(
                     onValueChange = { subUrlInput = it },
                     placeholder = { Text("https://.../sub/...") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = ShadowRedNeon,
+                        unfocusedBorderColor = Color(0xFF333333),
+                        cursorColor = ShadowRedNeon
+                    )
                 )
             },
             confirmButton = {
@@ -1136,7 +1286,7 @@ private fun ServersTab(
                         subUrlInput = ""
                         showSubDialog = false
                     }
-                }) { Text("Ekle", color = PurpleLight, fontWeight = FontWeight.Bold) }
+                }) { Text("Ekle", color = ShadowRedNeon, fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
                 TextButton(onClick = { showSubDialog = false }) { Text("Vazgeç", color = TextMuted) }
@@ -1144,7 +1294,6 @@ private fun ServersTab(
         )
     }
 }
-
 @Composable
 private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (FeedbackType) -> Unit) {
     var isLoggedIn by remember { mutableStateOf(prefs.getBoolean("is_logged_in", false)) }
@@ -1158,42 +1307,50 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("S", color = PurpleLight, fontSize = 80.sp, fontWeight = FontWeight.Black)
+            // Neon Kırmızı Logo
+            Text("S", color = ShadowRedNeon, fontSize = 80.sp, fontWeight = FontWeight.Black)
             Text("SUFFER SHADOW", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Spacer(Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(40.dp))
             
             Text(
                 text = "Devam etmek için giriş yapmalısınız.",
                 color = TextMuted, fontSize = 14.sp, textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             
-            NeonButton(
-                text = "Giriş Yap",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { feedback(FeedbackType.TAP); isRegisterMode = false; showAuthDialog = true }
-            )
-            Spacer(Modifier.height(12.dp))
-            NeonButton(
-                text = "Yeni Hesap Oluştur",
-                modifier = Modifier.fillMaxWidth(),
-                secondary = true,
-                onClick = { feedback(FeedbackType.TAP); isRegisterMode = true; showAuthDialog = true }
-            )
+            // Giriş Yap Butonu (Kırmızı Neon)
+            Box(
+                modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)))
+                    .clickable { feedback(FeedbackType.TAP); isRegisterMode = false; showAuthDialog = true },
+                contentAlignment = Alignment.Center
+            ) { Text("Giriş Yap", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Hesap Oluştur Butonu (Kenarlıklı Neon)
+            Box(
+                modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
+                    .background(ShadowCardBg).border(1.dp, ShadowRedNeon, RoundedCornerShape(12.dp))
+                    .clickable { feedback(FeedbackType.TAP); isRegisterMode = true; showAuthDialog = true },
+                contentAlignment = Alignment.Center
+            ) { Text("Yeni Hesap Oluştur", color = ShadowRedNeon, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
         }
     } else {
         val uriHandler = LocalUriHandler.current
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("PROFİLİM", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-            Spacer(Modifier.height(4.dp))
-            Text("ID: $phoneId", color = PurpleLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("ID: $phoneId", color = ShadowRedNeon, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             
-            Spacer(Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(24.dp))
             
-            AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(16.dp)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("SOSYAL MEDYA", color = PurpleLight, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+            Box(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(16.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("SOSYAL MEDYA", color = ShadowRedNeon, fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
                     
                     SocialMediaRow(
                         icon = "🎵", title = "TikTok Kanalım", 
@@ -1218,19 +1375,20 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
                 }
             }
             
-            Spacer(Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(30.dp))
             
-            NeonButton(
-                text = "Çıkış Yap",
-                modifier = Modifier.fillMaxWidth(),
-                secondary = true,
-                onClick = { 
-                    feedback(FeedbackType.TAP)
-                    isLoggedIn = false
-                    phoneId = ""
-                    prefs.edit().putBoolean("is_logged_in", false).putString("logged_in_phone", "").apply()
-                }
-            )
+            // Çıkış Yap Butonu
+            Box(
+                modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
+                    .background(ShadowCardBg).border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
+                    .clickable { 
+                        feedback(FeedbackType.TAP)
+                        isLoggedIn = false
+                        phoneId = ""
+                        prefs.edit().putBoolean("is_logged_in", false).putString("logged_in_phone", "").apply()
+                    },
+                contentAlignment = Alignment.Center
+            ) { Text("Çıkış Yap", color = Color(0xFFFF4658), fontWeight = FontWeight.Bold, fontSize = 16.sp) }
         }
     }
 
@@ -1251,17 +1409,21 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
 @Composable
 private fun SocialMediaRow(icon: String, title: String, buttonText: String, buttonColor: Color, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CardBg2).padding(12.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ShadowCardBg2).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(icon, fontSize = 24.sp)
-        Spacer(Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-        AnimatedSurface(shape = RoundedCornerShape(8.dp), color = buttonColor.copy(alpha = 0.2f), onClick = onClick) {
-            Text(text = buttonText, color = buttonColor, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+        Box(
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(buttonColor.copy(alpha = 0.2f)).clickable { onClick() }.padding(horizontal = 12.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = buttonText, color = buttonColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
+
 @Composable
 private fun AuthDialog(
     isRegister: Boolean,
@@ -1278,7 +1440,7 @@ private fun AuthDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isLoading) onDismiss() },
-        containerColor = CardBg,
+        containerColor = ShadowCardBg,
         titleContentColor = Color.White,
         textContentColor = TextMuted,
         title = { Text(if (isRegister) "Yeni Hesap Oluştur" else "Giriş Yap", fontWeight = FontWeight.Bold) },
@@ -1293,7 +1455,12 @@ private fun AuthDialog(
                         placeholder = { Text("61234567") },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
-                        enabled = !isLoading
+                        enabled = !isLoading,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ShadowRedNeon,
+                            unfocusedBorderColor = Color(0xFF333333),
+                            cursorColor = ShadowRedNeon
+                        )
                     )
                 }
                 OutlinedTextField(
@@ -1302,7 +1469,12 @@ private fun AuthDialog(
                     label = { Text("Şifre") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading
+                    enabled = !isLoading,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = ShadowRedNeon,
+                        unfocusedBorderColor = Color(0xFF333333),
+                        cursorColor = ShadowRedNeon
+                    )
                 )
                 if (isRegister) {
                     OutlinedTextField(
@@ -1311,11 +1483,16 @@ private fun AuthDialog(
                         label = { Text("Şifreyi Onayla") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading
+                        enabled = !isLoading,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ShadowRedNeon,
+                            unfocusedBorderColor = Color(0xFF333333),
+                            cursorColor = ShadowRedNeon
+                        )
                     )
                 }
                 if (errorMsg.isNotEmpty()) {
-                    Text(errorMsg, color = RedSoft, fontSize = 12.sp)
+                    Text(errorMsg, color = Color(0xFFFF4658), fontSize = 12.sp)
                 }
             }
         },
@@ -1381,9 +1558,9 @@ private fun AuthDialog(
                 enabled = !isLoading
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PurpleLight, strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = ShadowRedNeon, strokeWidth = 2.dp)
                 } else {
-                    Text(if (isRegister) "Kayıt Ol" else "Giriş Yap", color = PurpleLight, fontWeight = FontWeight.Bold)
+                    Text(if (isRegister) "Kayıt Ol" else "Giriş Yap", color = ShadowRedNeon, fontWeight = FontWeight.Bold)
                 }
             }
         },
@@ -1392,11 +1569,10 @@ private fun AuthDialog(
         }
     )
 }
-
 @Composable
 internal fun SectionHeading(number: String, title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 9.dp)) {
-        Text(number, color = PurpleLight, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+        Text(number, color = ShadowRedNeon, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
         Spacer(Modifier.width(9.dp))
         Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
     }
@@ -1415,38 +1591,20 @@ internal fun PreferenceSwitchRow(title: String, subtitle: String, checked: Boole
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = PurpleMain,
+                checkedTrackColor = ShadowRedNeon,
+                checkedBorderColor = ShadowRedDeep,
                 uncheckedThumbColor = TextMuted,
-                uncheckedTrackColor = Color(0xFF30364D)
+                uncheckedTrackColor = Color(0xFF30364D),
+                uncheckedBorderColor = Color(0xFF333333)
             )
         )
     }
 }
 
 @Composable
-private fun BrandHeader() {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-        Box(
-            modifier = Modifier.size(62.dp).clip(RoundedCornerShape(16.dp))
-                .background(Brush.linearGradient(listOf(PurpleLight, PurpleMain, Color(0xFF24104E))))
-                .border(1.dp, PurpleLight.copy(alpha = 0.6f), RoundedCornerShape(16.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("S", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Black)
-        }
-        Spacer(Modifier.width(13.dp))
-        Column {
-            Text("SUFFER", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp, lineHeight = 27.sp)
-            Text("SHADOW", color = PurpleLight, fontSize = 25.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp, lineHeight = 27.sp)
-            Text("FAST VPN", color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
-        }
-    }
-}
-
-@Composable
 internal fun StatusPill(text: String, color: Color) {
     Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardBg.copy(alpha = 0.82f)).padding(horizontal = 14.dp, vertical = 11.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ShadowCardBg.copy(alpha = 0.82f)).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
@@ -1457,7 +1615,7 @@ internal fun StatusPill(text: String, color: Color) {
 
 @Composable
 internal fun InfoPill(modifier: Modifier = Modifier, title: String, subtitle: String) {
-    Column(modifier.clip(RoundedCornerShape(12.dp)).background(CardBg2).padding(horizontal = 13.dp, vertical = 12.dp)) {
+    Column(modifier.clip(RoundedCornerShape(12.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF222222), RoundedCornerShape(12.dp)).padding(horizontal = 13.dp, vertical = 12.dp)) {
         Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
         Spacer(Modifier.height(3.dp))
         Text(subtitle, color = TextMuted, fontSize = 11.sp, maxLines = 1)
@@ -1474,18 +1632,21 @@ internal fun NeonButton(
 ) {
     AnimatedSurface(
         modifier = modifier.heightIn(min = 48.dp),
-        shape = RoundedCornerShape(8.dp),
-        brush = if (secondary) null else Brush.horizontalGradient(listOf(PurpleDeep, PurpleMain, Color(0xFFB833FF))),
-        color = if (secondary) Color(0xFF1C1E32) else PurpleMain,
+        shape = RoundedCornerShape(12.dp),
+        brush = if (secondary) null else Brush.horizontalGradient(listOf(ShadowRedDeep, ShadowRedNeon, Color(0xFFFF5360))),
+        color = if (secondary) ShadowCardBg else ShadowRedNeon,
         onClick = onClick,
         contentAlignment = Alignment.Center
     ) {
+        if (secondary) {
+             androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
+        }
         Row(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 11.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             if (leading != null) {
-                Text(leading, color = if (secondary) PurpleLight else Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(leading, color = if (secondary) ShadowRedNeon else Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(9.dp))
             }
-            Text(text, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, letterSpacing = 1.sp)
+            Text(text, color = if (secondary) ShadowRedNeon else Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, letterSpacing = 1.sp)
         }
     }
 }
@@ -1494,7 +1655,7 @@ internal fun NeonButton(
 internal fun AnimatedSurface(
     modifier: Modifier = Modifier,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
-    color: Color = CardBg,
+    color: Color = ShadowCardBg,
     brush: Brush? = null,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
@@ -1510,11 +1671,16 @@ internal fun AnimatedSurface(
     val clickModifier = if (onClick != null) {
         Modifier.clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
     } else Modifier
+    
+    // KENARLIK VE GÖLGE (Eski mor çizgileri kırmızıya çevrildi)
+    val borderModifier = if (brush == null && color == ShadowCardBg) Modifier.border(1.dp, Color(0xFF2A0000), shape) else Modifier
+
     Box(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(shape)
             .then(if (brush != null) Modifier.background(brush, shape) else Modifier.background(color, shape))
+            .then(borderModifier)
             .then(clickModifier),
         contentAlignment = contentAlignment,
         content = content
@@ -1544,21 +1710,6 @@ private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) 
                     lineTo(w * 0.57f, h * 0.88f)
                 }
                 drawPath(path, color, style = style)
-            }
-            "settings" -> {
-                val cx = w / 2f
-                val cy = h / 2f
-                val outer = w * 0.34f
-                for (i in 0 until 8) {
-                    val angle = i * PI / 4.0
-                    val x1 = cx + cos(angle).toFloat() * outer
-                    val y1 = cy + sin(angle).toFloat() * outer
-                    val x2 = cx + cos(angle).toFloat() * (outer + w * 0.13f)
-                    val y2 = cy + sin(angle).toFloat() * (outer + w * 0.13f)
-                    drawLine(color, androidx.compose.ui.geometry.Offset(x1, y1), androidx.compose.ui.geometry.Offset(x2, y2), stroke, cap = StrokeCap.Round)
-                }
-                drawCircle(color, radius = outer, center = androidx.compose.ui.geometry.Offset(cx, cy), style = style)
-                drawCircle(color, radius = w * 0.11f, center = androidx.compose.ui.geometry.Offset(cx, cy), style = style)
             }
             "game" -> {
                 drawRoundRect(
@@ -1608,10 +1759,10 @@ private fun PowerGlyph(color: Color, modifier: Modifier = Modifier) {
 fun SufferShadowTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = PurpleMain,
-            secondary = PurpleLight,
-            background = BgDark,
-            surface = CardBg,
+            primary = ShadowRedNeon,
+            secondary = ShadowRedNeon,
+            background = ShadowBgDark,
+            surface = ShadowCardBg,
             onPrimary = Color.White,
             onBackground = Color.White,
             onSurface = Color.White
@@ -1657,12 +1808,6 @@ private class GameToolsState(private val prefs: android.content.SharedPreference
         }
         prefs.edit().putBoolean(key, value).apply()
     }
-    fun updateTarget(value: String) {
-        abTarget = value
-        prefs.edit().putString(GamePrefs.AB_TARGET, value).apply()
-    }
-    fun runAb(scope: CoroutineScope, vpnOn: Boolean, invalidMsg: String, linkMsg: String) {}
-    fun runRanking(scope: CoroutineScope, servers: List<Server>) {}
 }
 
 private fun parseGameTarget(raw: String): Pair<String, Int>? = null
@@ -1686,11 +1831,10 @@ private fun GameBackupDialog(
 
 @Composable
 internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
-    AnimatedSurface(Modifier.fillMaxWidth(), color = CardBg, shape = RoundedCornerShape(12.dp)) {
+    AnimatedSurface(Modifier.fillMaxWidth(), color = ShadowCardBg, shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.padding(16.dp), content = content)
     }
 }
-
 @Composable
 private fun GameToolsTab(
     lang: String,
@@ -1715,7 +1859,7 @@ private fun GameToolsTab(
     onOpenVip: () -> Unit
 ) {
     val tm = lang == "tm"
-        var showBoosterScreen by remember { mutableStateOf(false) }
+    var showBoosterScreen by remember { mutableStateOf(false) }
 
     if (showBoosterScreen) {
         GameBoosterScreen(
@@ -1730,9 +1874,11 @@ private fun GameToolsTab(
     Column(
         Modifier
             .fillMaxSize()
+            .background(ShadowBgDark) // Tamamen siyah arka plan
             .verticalScroll(rememberScrollState())
             .padding(18.dp)
     ) {
+        // BAŞLIK
         Text(
             text = if (tm) "OÝUN MERKEZI" else "OYUN MERKEZİ",
             color = Color.White,
@@ -1742,13 +1888,14 @@ private fun GameToolsTab(
         )
         Text(
             text = if (tm) "Premium aýratynlyklar we kod ulanmak" else "Premium özellikler ve kod kullanımı",
-            color = PurpleLight,
+            color = ShadowRedNeon, // Mor yerine Neon Kırmızı
             fontSize = 13.sp,
             letterSpacing = 1.sp
         )
         
         Spacer(Modifier.height(24.dp))
 
+        // GAME BOOSTER KARTI (Eski devasa mor kutu düzeltildi, artık siyah-kırmızı)
         BoosterHeroCard(
             lang = lang,
             prefs = prefs,
@@ -1757,23 +1904,40 @@ private fun GameToolsTab(
 
         Spacer(Modifier.height(16.dp))
 
-        NeonButton(
-            text = if (tm) "GAME BOOSTER PANELINI AÇ" else "GAME BOOSTER PANELİNİ AÇ",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { feedback(FeedbackType.TAP); showBoosterScreen = true }
-        )
+        // GAME BOOSTER PANEL BUTONU
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Brush.horizontalGradient(listOf(ShadowRedDeep, ShadowRedNeon)))
+                .clickable { feedback(FeedbackType.TAP); showBoosterScreen = true },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (tm) "GAME BOOSTER PANELINI AÇ" else "GAME BOOSTER PANELİNİ AÇ",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp
+            )
+        }
 
         Spacer(Modifier.height(24.dp))
 
-        AnimatedSurface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            color = CardBg,
-            onClick = { feedback(FeedbackType.TAP); onOpenVip() }
+        // REDEEM / PREMIUM KARTI
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(ShadowCardBg)
+                .border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp))
+                .clickable { feedback(FeedbackType.TAP); onOpenVip() }
+                .padding(20.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("🎟️", fontSize = 32.sp)
-                Spacer(Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = if (tm) "Premium açmak üçin Redeem koduny giriziň" else "Premium açmak için Redeem kodunu girin",
                     color = Color.White,
@@ -1781,13 +1945,22 @@ private fun GameToolsTab(
                     fontSize = 15.sp,
                     textAlign = TextAlign.Center
                 )
-                Spacer(Modifier.height(12.dp))
-                NeonButton(
-                    text = if (tm) "KODY ULAN" else "KODU KULLAN",
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { feedback(FeedbackType.TAP); onOpenVip() }
-                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(ShadowCardBg2)
+                        .border(1.dp, ShadowRedNeon, RoundedCornerShape(10.dp))
+                        .clickable { feedback(FeedbackType.TAP); onOpenVip() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(if (tm) "KODY ULAN" else "KODU KULLAN", color = ShadowRedNeon, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
             }
         }
+        
+        Spacer(Modifier.height(20.dp))
     }
 }
