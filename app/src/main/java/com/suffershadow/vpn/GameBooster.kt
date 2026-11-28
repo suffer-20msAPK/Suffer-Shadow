@@ -14,11 +14,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
-import android.graphics.Canvas
-import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -27,18 +23,16 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.TextUtils
 import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.view.animation.DecelerateInterpolator
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -47,8 +41,7 @@ import kotlin.concurrent.thread
 import kotlin.math.abs
 
 // =====================================================================
-// PUBG paketleri (bölgesel sürümler). Yeni sürüm eklemek için listeye paket adı eklemek yeterli.
-// AndroidManifest.xml içindeki <queries> bölümüne de aynı paket adı eklenmelidir (paket görünürlüğü).
+// PUBG paketleri (bölgesel sürümler).
 // =====================================================================
 val PUBG_PACKAGES = listOf(
     "com.tencent.ig",             // Global
@@ -71,7 +64,7 @@ object BoosterPrefs {
     const val BUBBLE_Y = "gb_bubble_y"
 }
 
-/** Arayüzün ve kayan panelin okuduğu canlı durum (gerçek ölçümler; ölçülemeyen değer -1 kalır). */
+/** Arayüzün ve kayan panelin okuduğu canlı durum. */
 object BoosterState {
     var enabled by mutableStateOf(false)
     var serviceRunning by mutableStateOf(false)
@@ -102,6 +95,13 @@ object BoosterState {
     }
 }
 
+// =====================================================================
+// Compose Overlay için Activity Referansı
+// =====================================================================
+object OverlayContext {
+    var activity: MainActivity? = null
+}
+
 // ---------------------------------------------------------------------
 // İzinler ve yardımcılar
 // ---------------------------------------------------------------------
@@ -129,7 +129,6 @@ fun hasDndAccess(context: Context): Boolean =
         false
     }
 
-/** kind: "usage" | "overlay" | "dnd" */
 fun openSettingsScreen(context: Context, kind: String) {
     val intent = when (kind) {
         "usage" -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
@@ -149,7 +148,6 @@ fun findInstalledPubg(context: Context): String? {
     return PUBG_PACKAGES.firstOrNull { pm.getLaunchIntentForPackage(it) != null }
 }
 
-/** 0 = başlatıldı, 1 = PUBG kurulu değil, 2 = başlatılamadı */
 fun launchPubg(context: Context): Int {
     val pkg = findInstalledPubg(context) ?: return 1
     return try {
@@ -185,7 +183,6 @@ fun fmtClock(totalSec: Long): String {
     val t = if (totalSec < 0L) 0L else totalSec
     return String.format(Locale.US, "%02d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60)
 }
-
 // ---------------------------------------------------------------------
 // Oyun geçmişi ve hata ayıklama günlüğü
 // ---------------------------------------------------------------------
@@ -214,7 +211,6 @@ object GameHistory {
     }
 }
 
-/** Teknik hatalar ana ekranda değil, bu günlükte saklanır (Oyun sekmesi > Hata ayıklama). */
 object DebugLog {
     private val lock = Any()
 
@@ -364,8 +360,7 @@ class GameBoosterService : Service() {
         } catch (e: Exception) {
         }
     }
-
-    private fun notifyHot(temp: Float) {
+        private fun notifyHot(temp: Float) {
         try {
             val t = if (temp >= 0f) String.format(Locale.US, " (%.1f °C)", temp) else ""
             val n = builder()
@@ -430,7 +425,6 @@ class GameBoosterService : Service() {
         }
     }
 
-    /** Android 8+ uygulamalara /proc/stat erişimi vermez; okunamazsa -1 (erişilemiyor) döner. */
     private fun readCpuPct(): Int {
         return try {
             val line = File("/proc/stat").bufferedReader().use { it.readLine() } ?: return -1
@@ -470,7 +464,6 @@ class GameBoosterService : Service() {
         if (!hasUsageAccess(this)) return
         pollForeground()
         val pkg = fgPkg ?: return
-        // Kendi uygulamamız ve sistem arayüzü nötr: oyun durumunu değiştirmez
         if (pkg == packageName || pkg == "com.android.systemui") return
         val isGame = PUBG_PACKAGES.contains(pkg)
         if (isGame && !inGame) onGameStart(pkg) else if (!isGame && inGame) onGameEnd()
@@ -544,7 +537,6 @@ class GameBoosterService : Service() {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (!nm.isNotificationPolicyAccessGranted) return
             val prev = nm.currentInterruptionFilter
-            // Kullanıcı zaten kendi DND modunu kullanıyorsa dokunma
             if (prev == NotificationManager.INTERRUPTION_FILTER_ALL) {
                 prefs.edit().putInt(BoosterPrefs.DND_PREV, prev).apply()
                 nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
@@ -604,45 +596,9 @@ class GameBoosterService : Service() {
         }
     }
 }
-
 // ---------------------------------------------------------------------
-// Kayan düğme + iki yandan açılan panel (düz Android View'ları; Compose bağımlılığı yok)
+// Kayan düğme (Baloncuk) ve Compose tabanlı GameSpace HUD Paneli
 // ---------------------------------------------------------------------
-private class SparkView(ctx: Context) : View(ctx) {
-    var data: List<Int> = emptyList()
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFB46BFF.toInt(); strokeWidth = 3f; style = Paint.Style.STROKE
-    }
-    private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFF7185.toInt() }
-
-    override fun onDraw(c: Canvas) {
-        val d = data
-        if (d.size < 2) return
-        val mx = maxOf(50, d.maxOrNull() ?: 50) * 1.15f
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val step = w / (d.size - 1)
-        val path = android.graphics.Path()
-        var started = false
-        d.forEachIndexed { i, v ->
-            val x = i * step
-            if (v >= 0) {
-                val y = h - (v / mx) * h
-                if (!started) {
-                    path.moveTo(x, y)
-                    started = true
-                } else {
-                    path.lineTo(x, y)
-                }
-            } else {
-                c.drawCircle(x, 4f, 3f, dot)
-                started = false
-            }
-        }
-        c.drawPath(path, line)
-    }
-}
-
 private class OverlayController(
     private val ctx: Context,
     private val prefs: SharedPreferences,
@@ -653,43 +609,19 @@ private class OverlayController(
     private val density = ctx.resources.displayMetrics.density
     private val ui = Handler(Looper.getMainLooper())
 
-    private var bubble: TextView? = null
+    private var bubble: android.widget.TextView? = null
     private var bubbleLp: WindowManager.LayoutParams? = null
-    private var panel: LinearLayout? = null
+    private var panel: ComposeView? = null
     private var panelOpen = false
 
-    private var left: LinearLayout? = null
-    private var right: LinearLayout? = null
-    private var spark: SparkView? = null
-    private var tvDetail: TextView? = null
-
-    private var tvVpn: TextView? = null
-    private var tvServer: TextView? = null
-    private var tvPing: TextView? = null
-    private var tvJitter: TextView? = null
-    private var tvLoss: TextView? = null
-    private var tvDown: TextView? = null
-    private var tvUp: TextView? = null
-    private var tvFps: TextView? = null
-    private var tvRam: TextView? = null
-    private var tvCpu: TextView? = null
-    private var tvTemp: TextView? = null
-    private var tvTimer: TextView? = null
-    private var tvMode: TextView? = null
-
-    private val tick = object : Runnable {
-        override fun run() {
-            updateTexts()
-            ui.postDelayed(this, 1000L)
-        }
-    }
-
-    private fun dp(v: Int): Int = (v * density).toInt()
     private val type: Int =
         if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else WindowManager.LayoutParams.TYPE_PHONE
+
     private val flags: Int =
-        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+
+    private fun dp(v: Int): Int = (v * density).toInt()
 
     private fun animMs(): Long = if (BoosterState.reduceAnim) 0L else 240L
 
@@ -702,18 +634,18 @@ private class OverlayController(
     fun show() {
         if (bubble != null) return
         val size = dp(50)
-        val tv = TextView(ctx).apply {
+        val tv = android.widget.TextView(ctx).apply {
             text = "S"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 20f
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             alpha = 0.92f
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(0xFFB46BFF.toInt(), 0xFF7B20FF.toInt(), 0xFF4210A8.toInt())
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFFFF263D.toInt(), 0xFF9F1227.toInt(), 0xFF050505.toInt())
             ).apply {
-                shape = GradientDrawable.OVAL
+                shape = android.graphics.drawable.GradientDrawable.OVAL
                 setStroke(dp(2), 0x99FFFFFF.toInt())
             }
         }
@@ -727,46 +659,29 @@ private class OverlayController(
         bubble = tv
         bubbleLp = lp
         BoosterState.overlayShown = true
-        ui.post(tick)
     }
 
     fun hide() {
-        ui.removeCallbacks(tick)
-        removePanelNow()
-        try {
-            bubble?.let { wm.removeView(it) }
-        } catch (e: Exception) {
-        }
+        closePanel()
+        try { bubble?.let { wm.removeView(it) } } catch (e: Exception) { }
         bubble = null
         bubbleLp = null
         BoosterState.overlayShown = false
     }
 
     private fun dragListener(lp: WindowManager.LayoutParams, size: Int): View.OnTouchListener {
-        var downX = 0f
-        var downY = 0f
-        var startX = 0
-        var startY = 0
-        var moved = false
+        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
         return View.OnTouchListener { v, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    downX = e.rawX; downY = e.rawY
-                    startX = lp.x; startY = lp.y
-                    moved = false
-                    true
+                    downX = e.rawX; downY = e.rawY; startX = lp.x; startY = lp.y; moved = false; true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = e.rawX - downX
-                    val dy = e.rawY - downY
+                    val dx = e.rawX - downX; val dy = e.rawY - downY
                     if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true
                     if (moved) {
-                        lp.x = startX + dx.toInt()
-                        lp.y = startY + dy.toInt()
-                        try {
-                            wm.updateViewLayout(v, lp)
-                        } catch (ex: Exception) {
-                        }
+                        lp.x = startX + dx.toInt(); lp.y = startY + dy.toInt()
+                        try { wm.updateViewLayout(v, lp) } catch (ex: Exception) { }
                     }
                     true
                 }
@@ -785,206 +700,79 @@ private class OverlayController(
         lp.y = lp.y.coerceIn(0, maxOf(0, sh - size))
         val anim = ValueAnimator.ofInt(lp.x, targetX)
         anim.duration = animMs()
-        anim.addUpdateListener {
-            lp.x = it.animatedValue as Int
-            try {
-                wm.updateViewLayout(v, lp)
-            } catch (ex: Exception) {
-            }
-        }
+        anim.addUpdateListener { lp.x = it.animatedValue as Int; try { wm.updateViewLayout(v, lp) } catch (ex: Exception) { } }
         anim.start()
         prefs.edit().putInt(BoosterPrefs.BUBBLE_X, targetX).putInt(BoosterPrefs.BUBBLE_Y, lp.y).apply()
     }
 
-    private fun togglePanel() {
-        if (panelOpen) closePanel() else openPanel()
-    }
-
-    // ---- panel ----
-    private fun rounded(color: Int, radius: Int, stroke: Int = 0, strokeColor: Int = 0): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = radius.toFloat()
-            if (stroke > 0) setStroke(stroke, strokeColor)
-        }
-
-    private fun label(text: String, sizeSp: Float, color: Int, bold: Boolean = false): TextView =
-        TextView(ctx).apply {
-            this.text = text
-            textSize = sizeSp
-            setTextColor(color)
-            if (bold) typeface = Typeface.DEFAULT_BOLD
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
-        }
-
-    private fun card(title: String): LinearLayout = LinearLayout(ctx).apply {
-        orientation = LinearLayout.VERTICAL
-        background = rounded(0xF2151B33.toInt(), dp(14), dp(1), 0xFF50308C.toInt())
-        setPadding(dp(10), dp(8), dp(10), dp(8))
-        addView(label(title, 10f, 0xFFB46BFF.toInt(), true))
-    }
-
-    private fun row(card: LinearLayout): TextView {
-        val tv = label("", 11f, 0xFFFFFFFF.toInt())
-        tv.setPadding(0, dp(2), 0, dp(2))
-        card.addView(tv)
-        return tv
-    }
-
-    private fun button(text: String, onClick: () -> Unit): TextView =
-        label(text, 11f, 0xFFFFFFFF.toInt(), true).apply {
-            gravity = Gravity.CENTER
-            background = rounded(0xFF302052.toInt(), dp(10))
-            setPadding(dp(8), dp(7), dp(8), dp(7))
-            setOnClickListener { onClick() }
-        }
-
-    private fun buildPanel(): LinearLayout {
-        val l = card("VPN & AĞ")
-        val r = card("SİSTEM")
-        tvVpn = row(l); tvServer = row(l); tvPing = row(l); tvJitter = row(l)
-        tvLoss = row(l); tvDown = row(l); tvUp = row(l)
-        val sp = SparkView(ctx)
-        sp.visibility = View.GONE
-        l.addView(sp, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)))
-        spark = sp
-        tvDetail = label("", 10f, 0xFFA7AEC8.toInt()).apply { visibility = View.GONE }
-        l.addView(tvDetail)
-
-        tvFps = row(r); tvRam = row(r); tvCpu = row(r); tvTemp = row(r); tvTimer = row(r); tvMode = row(r)
-
-        val cols = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        cols.addView(l, LinearLayout.LayoutParams(dp(158), LinearLayout.LayoutParams.WRAP_CONTENT))
-        val gap = View(ctx)
-        cols.addView(gap, LinearLayout.LayoutParams(dp(6), 1))
-        cols.addView(r, LinearLayout.LayoutParams(dp(158), LinearLayout.LayoutParams.WRAP_CONTENT))
-        left = l
-        right = r
-
-        val bar = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        val bw = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        bw.setMargins(dp(2), 0, dp(2), 0)
-        bar.addView(button("Grafik") {
-            val s = spark ?: return@button
-            s.visibility = if (s.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        }, bw)
-        bar.addView(button("Sunucu") { openApp(-1) }, bw)
-        bar.addView(button("VPN") {
-            val d = tvDetail ?: return@button
-            d.visibility = if (d.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-            updateTexts()
-        }, bw)
-        bar.addView(button("Uygulama") { openApp(0) }, bw)
-        bar.addView(button("Küçült") { closePanel() }, bw)
-
-        return LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            addView(cols)
-            val bp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            bp.topMargin = dp(6)
-            addView(bar, bp)
-        }
-    }
+    private fun togglePanel() { if (panelOpen) closePanel() else openPanel() }
 
     private fun openPanel() {
         if (panelOpen) return
-        val root = buildPanel()
+        val activity = OverlayContext.activity ?: return // Activity bağlamı yoksa panel açılmaz
+
+        val view = ComposeView(activity).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val stats = GameOverlayStats(
+                    isVpnConnected = VpnState.status == VpnState.CONNECTED,
+                    serverName = prefs.getString("active_name", "Bilinmiyor") ?: "Bilinmiyor",
+                    serverFlag = "🌐", // İleride bayrak resimleriyle değiştirilecek
+                    pingMs = if (BoosterState.pingAvg >= 0) BoosterState.pingAvg else null,
+                    jitterMs = if (BoosterState.jitterMs >= 0) BoosterState.jitterMs else null,
+                    packetLossPercent = if (BoosterState.lossPct >= 0) BoosterState.lossPct.toFloat() else null,
+                    downloadRate = fmtRate(VpnState.rxBps),
+                    uploadRate = fmtRate(VpnState.txBps),
+                    ramUsagePercent = if (BoosterState.ramUsedPct >= 0) BoosterState.ramUsedPct else null,
+                    freeRamMb = if (BoosterState.ramFreeMb >= 0) BoosterState.ramFreeMb else null,
+                    batteryPercent = if (BoosterState.battPct >= 0) BoosterState.battPct else null,
+                    cpuTemperatureC = if (BoosterState.battTempC >= 0f) BoosterState.battTempC else null,
+                    vpnDuration = if (VpnState.status == VpnState.CONNECTED) fmtClock((prefs.getLong("session_end", 0) - System.currentTimeMillis())/1000) else "—",
+                    gameMode = if (BoosterState.gameRunning) "Aktif" else "Beklemede"
+                )
+                SufferShadowGameSpaceOverlay(
+                    stats = stats,
+                    onVpnClick = { openApp(0) },
+                    onServerClick = { openApp(-1) },
+                    onBoosterClick = { openApp(1) },
+                    onSettingsClick = { openApp(2) },
+                    onMinimize = { closePanel() },
+                    onClose = { closePanel() }
+                )
+            }
+        }
+
+        // 🚨 PUBG Dokunma Koruması: 
+        // Ekranın ortasına (oyun alanına) dokunulursa bu dokunmayı tüketme (false dön), 
+        // sadece sağ ve sol panel alanlarındaki dokunmaları yakala.
+        view.setOnTouchListener { v, event ->
+            if (event.x > v.width * 0.28f && event.x < v.width * 0.72f) {
+                return@setOnTouchListener false // Oyun alanı, dokunmayı alta (PUBG'ye) ilet
+            }
+            false // Paneller kendi içindeki butonları zaten Compose ile yakalar
+        }
+
         val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             type, flags, PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(16)
+            gravity = Gravity.TOP or Gravity.START
         }
+
         try {
-            wm.addView(root, lp)
+            wm.addView(view, lp)
+            panel = view
+            panelOpen = true
         } catch (e: Exception) {
-            DebugLog.add(ctx, "panel add: " + e.message)
-            return
-        }
-        panel = root
-        panelOpen = true
-        updateTexts()
-        val d = animMs()
-        val off = dp(180).toFloat()
-        left?.let {
-            it.translationX = -off
-            it.alpha = 0f
-            it.animate().translationX(0f).alpha(1f).setDuration(d).setInterpolator(DecelerateInterpolator()).start()
-        }
-        right?.let {
-            it.translationX = off
-            it.alpha = 0f
-            it.animate().translationX(0f).alpha(1f).setDuration(d).setInterpolator(DecelerateInterpolator()).start()
+            DebugLog.add(ctx, "compose panel error: " + e.message)
         }
     }
 
     private fun closePanel() {
         if (!panelOpen) return
         panelOpen = false
-        val d = animMs()
-        val off = dp(180).toFloat()
-        left?.animate()?.translationX(-off)?.alpha(0f)?.setDuration(d)?.start()
-        val r = right
-        if (r != null) {
-            r.animate().translationX(off).alpha(0f).setDuration(d).withEndAction { removePanelNow() }.start()
-        } else {
-            removePanelNow()
-        }
-    }
-
-    private fun removePanelNow() {
-        panelOpen = false
-        try {
-            panel?.let { wm.removeView(it) }
-        } catch (e: Exception) {
-        }
+        try { panel?.let { wm.removeView(it) } } catch (e: Exception) { }
         panel = null
-    }
-
-    private fun updateTexts() {
-        if (!panelOpen) return
-        val white = 0xFFFFFFFF.toInt()
-        val red = 0xFFFF7185.toInt()
-        val green = 0xFF00EFA8.toInt()
-        val connected = VpnState.status == VpnState.CONNECTED
-        val st = when (VpnState.status) {
-            VpnState.CONNECTED -> "Bağlandı"
-            VpnState.CONNECTING -> "Bağlanılıyor"
-            else -> "Bağlantı kesildi"
-        }
-        tvVpn?.text = "VPN: $st"
-        tvVpn?.setTextColor(if (connected) green else white)
-        tvServer?.text = "Sunucu: " + (prefs.getString("active_name", "") ?: "").ifEmpty { "—" }
-        tvPing?.text = "Ping: " + (if (BoosterState.pingAvg >= 0) "${BoosterState.pingAvg} ms" else "—")
-        tvJitter?.text = "Jitter: " + (if (BoosterState.jitterMs >= 0) "${BoosterState.jitterMs} ms" else "—")
-        tvLoss?.text = "Paket kaybı: " + (if (BoosterState.lossPct >= 0) "%${BoosterState.lossPct}" else "—")
-        tvDown?.text = "↓ " + (if (connected) fmtRate(VpnState.rxBps) else "—")
-        tvUp?.text = "↑ " + (if (connected) fmtRate(VpnState.txBps) else "—")
-
-        tvFps?.text = "FPS: erişilemiyor"
-        tvRam?.text = "RAM: " + (if (BoosterState.ramUsedPct >= 0) "%${BoosterState.ramUsedPct} • boş ${BoosterState.ramFreeMb} MB" else "—")
-        tvCpu?.text = "CPU: " + (if (BoosterState.cpuPct >= 0) "%${BoosterState.cpuPct}" else "erişilemiyor")
-        val temp = if (BoosterState.battTempC >= 0f) String.format(Locale.US, "%.1f°C", BoosterState.battTempC) else "—"
-        tvTemp?.text = "Isı: $temp" + (if (BoosterState.battPct >= 0) " • Pil %${BoosterState.battPct}" else "")
-        tvTemp?.setTextColor(if (BoosterState.thermalWarn) red else white)
-
-        val end = prefs.getLong("session_end", 0L)
-        tvTimer?.text = "VPN süresi: " + (if (connected && end > 0L) fmtClock((end - System.currentTimeMillis()) / 1000L) else "—")
-        tvMode?.text = "Oyun modu: " + (if (BoosterState.gameRunning) "Aktif" else "Beklemede")
-        tvMode?.setTextColor(if (BoosterState.gameRunning) green else white)
-
-        spark?.let {
-            it.data = pingSnapshot()
-            it.invalidate()
-        }
-        tvDetail?.let {
-            if (it.visibility == View.VISIBLE) {
-                val delay = if (VpnState.delayMs >= 0) "${VpnState.delayMs} ms" else "—"
-                it.text = "Tünel gecikmesi: $delay\nToplam ↓ " + fmtRate(VpnState.rxTotal).replace("/s", "") + " ↑ " + fmtRate(VpnState.txTotal).replace("/s", "")
-            }
-        }
     }
 }
