@@ -58,7 +58,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-// HATA ÇÖZÜMÜ İÇİN EKLENEN IMPORTLAR
 import androidx.compose.ui.unit.toPx
 import androidx.compose.material3.OutlinedTextFieldDefaults
 
