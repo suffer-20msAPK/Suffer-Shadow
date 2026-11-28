@@ -51,34 +51,38 @@ fun VipScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF1A0E40), BgDark, BgDark)))
+            // Arka plan rengi tam siyah ve üstten hafif kırmızı gradient
+            .background(Brush.verticalGradient(listOf(Color(0xFF1A0000), ShadowBgDark, ShadowBgDark)))
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(40.dp))
+        
+        // Başlık
         Text("VIP ÜYELİK", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-        Text("Suffer Shadow ayrıcalıkları", color = PurpleLight, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text("Suffer Shadow ayrıcalıkları", color = ShadowRedNeon, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         
         Spacer(Modifier.height(30.dp))
 
         // Avantajlar Kartı
         AnimatedSurface(
             modifier = Modifier.fillMaxWidth(),
-            color = CardBg,
+            color = ShadowCardBg,
             shape = RoundedCornerShape(20.dp)
         ) {
             Column(Modifier.padding(20.dp)) {
-                Text("NELER KAZANACAKSIN?", color = AccentGreen, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
+                Text("NELER KAZANACAKSIN?", color = ShadowRedNeon, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp)
                 Spacer(Modifier.height(12.dp))
-                VipFeature("🚀", "Sınırsız ve kesintisiz VPN erişimi")
+                
+                // Emoji yerine profesyonel metin/sembol görünümü
+                VipFeature("✦", "Sınırsız ve kesintisiz VPN erişimi")
                 VipFeature("⚡", "Öncelikli yüksek hızlı sunucular")
-                VipFeature("🛡️", "Gelişmiş DNS ve reklam engelleme")
-                VipFeature("🎮", "PUBG için düşük ping optimizasyonu")
+                VipFeature("🛡", "Gelişmiş DNS ve reklam engelleme")
+                VipFeature("◎", "PUBG için düşük ping optimizasyonu")
             }
         }
-
-        Spacer(Modifier.height(30.dp))
+                Spacer(modifier = Modifier.height(30.dp))
 
         // Telegram Satın Alma Butonu
         NeonButton(
@@ -96,30 +100,30 @@ fun VipScreen(
             leading = "➤"
         )
         
-        Spacer(Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         
         Text(
             "Ödeme sonrası size özel bir VIP kodu verilecektir.",
             color = TextMuted, fontSize = 12.sp, textAlign = TextAlign.Center
         )
 
-        Spacer(Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(40.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.1f)))
-        Spacer(Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         // Redeem Kodu Girişi
         Text("ELİNİZDE KOD VAR MI?", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         
         OutlinedTextField(
             value = code,
             onValueChange = { code = it.uppercase(java.util.Locale.US).filter { c -> c.isLetterOrDigit() || c == '-' } },
-            label = { Text("VIP Kodu") },
-            placeholder = { Text("SHADOW-XXXX-XXXX") },
+            label = { Text("VIP Kodu", color = TextMuted) },
+            placeholder = { Text("SHADOW-XXXX-XXXX", color = TextMuted.copy(alpha = 0.5f)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         
         NeonButton(
             text = if (isLoading) "Doğrulanıyor..." else "KODU ETKİNLEŞTİR",
@@ -148,30 +152,29 @@ fun VipScreen(
         )
 
         if (message.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Text(message, color = if (isError) RedSoft else AccentGreen, fontSize = 13.sp, textAlign = TextAlign.Center)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(message, color = if (isError) ShadowRedNeon else AccentGreen, fontSize = 13.sp, textAlign = TextAlign.Center)
         }
 
         if (vipEndDate != null) {
-            Spacer(Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             Text(
                 "VIP Bitiş Tarihi: ${vipEndDate!!.substringBefore("T")}",
-                color = PurpleLight, fontSize = 14.sp, fontWeight = FontWeight.Bold
+                color = ShadowRedNeon, fontSize = 14.sp, fontWeight = FontWeight.Bold
             )
         }
 
-        Spacer(Modifier.height(30.dp))
+        Spacer(modifier = Modifier.height(30.dp))
         TextButton(onClick = onDismiss) {
             Text("Geri Dön", color = TextMuted)
         }
     }
 }
-
 @Composable
 private fun VipFeature(icon: String, text: String) {
     Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(icon, fontSize = 18.sp)
-        Spacer(Modifier.width(12.dp))
+        Text(icon, fontSize = 18.sp, color = ShadowRedNeon)
+        Spacer(modifier = Modifier.width(12.dp))
         Text(text, color = Color.White, fontSize = 14.sp)
     }
 }
