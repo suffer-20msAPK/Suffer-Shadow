@@ -11,6 +11,7 @@ import java.net.URL
 import java.security.MessageDigest
 
 object UserManager {
+    // VPS IP Adresimiz
     private const val SUPABASE_URL = "http://46.8.225.27:8080"
     private const val SUPABASE_ANON_KEY = "sb_publishable_U8scDtQmhf830Pb5r65jxw_paP_dRRa"
 
@@ -29,7 +30,6 @@ object UserManager {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.setRequestProperty("apikey", SUPABASE_ANON_KEY)
-            // Authorization başlığını sildik, çakışma yapıyordu
 
             val responseCode = conn.responseCode
             if (responseCode in 200..299) {
@@ -44,8 +44,7 @@ object UserManager {
             return@withContext false
         }
     }
-
-    suspend fun registerUser(phoneId: String, password: String, deviceId: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        suspend fun registerUser(phoneId: String, password: String, deviceId: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         try {
             val hashedPass = hashPassword(password)
             val json = JSONObject().apply {
