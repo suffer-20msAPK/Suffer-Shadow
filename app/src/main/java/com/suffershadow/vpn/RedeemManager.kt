@@ -16,7 +16,7 @@ import java.util.TimeZone
 import java.util.UUID
 
 object RedeemManager {
-    // Senin Supabase Bilgilerin
+    // VPS IP Adresimiz
     private const val SUPABASE_URL = "http://46.8.225.27:8080"
     private const val SUPABASE_ANON_KEY = "sb_publishable_U8scDtQmhf830Pb5r65jxw_paP_dRRa"
     
@@ -83,14 +83,12 @@ object RedeemManager {
         }
         return@withContext Pair(false, null)
     }
-
-    // VIP KODU DOĞRUDAN VERİTABANINDAN OKUYAN FONKSİYON (GÜNCELLENDİ)
-    suspend fun redeemCode(context: Context, code: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        suspend fun redeemCode(context: Context, code: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val deviceId = getDeviceId(context)
         val cleanCode = code.trim().toUpperCase()
         
         try {
-            // 1. Girilen kodu SHA-256 ile şifrele (Veritabanındaki code_hash ile eşleşmesi için)
+            // 1. Girilen kodu SHA-256 ile şifrele
             val digest = java.security.MessageDigest.getInstance("SHA-256").digest(cleanCode.toByteArray())
             val codeHash = digest.fold("") { str, it -> str + "%02x".format(it) }
 
@@ -101,7 +99,6 @@ object RedeemManager {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.setRequestProperty("apikey", SUPABASE_ANON_KEY)
-            conn.setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
 
             val responseCode = conn.responseCode
             if (responseCode !in 200..299) {
@@ -124,7 +121,7 @@ object RedeemManager {
                 return@withContext Pair(false, "Bu kod daha önce kullanılmış.")
             }
             
-            // 3. Kodu "kullanıldı" olarak işaretle (id ile güncellemek en garantisidir)
+            // 3. Kodu "kullanıldı" olarak işaretle
             val id = codeData.getString("id")
             val updateUrl = URL("$SUPABASE_URL/rest/v1/redeem_codes?id=eq.$id")
             val updateConn = updateUrl.openConnection() as HttpURLConnection
@@ -133,7 +130,6 @@ object RedeemManager {
             updateConn.connectTimeout = 5000
             updateConn.readTimeout = 5000
             updateConn.setRequestProperty("apikey", SUPABASE_ANON_KEY)
-            updateConn.setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
             updateConn.setRequestProperty("Content-Type", "application/json")
             
             val updateJson = JSONObject()
@@ -158,14 +154,13 @@ object RedeemManager {
                 .putLong(KEY_LAST_CHECK, System.currentTimeMillis())
                 .apply()
 
-            // Opsiyonel: vip_subscriptions tablosuna da yaz (İleride cihaz değişirse diye)
+            // VIP tablosuna yaz
             try {
                 val vipUrl = URL("$SUPABASE_URL/rest/v1/vip_subscriptions")
                 val vipConn = vipUrl.openConnection() as HttpURLConnection
                 vipConn.requestMethod = "POST"
                 vipConn.doOutput = true
                 vipConn.setRequestProperty("apikey", SUPABASE_ANON_KEY)
-                vipConn.setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
                 vipConn.setRequestProperty("Content-Type", "application/json")
                 vipConn.setRequestProperty("Prefer", "resolution=merge-duplicates")
                 
@@ -179,9 +174,7 @@ object RedeemManager {
                 vos.write(vipJson.toString())
                 vos.flush()
                 vos.close()
-            } catch (e: Exception) {
-                // VIP tablosuna yazamazsa bile kod kullanılmış sayılsın, hata vermesin
-            }
+            } catch (e: Exception) { }
                 
             return@withContext Pair(true, "$days Günlük VIP Başarıyla Aktif Edildi!")
             
@@ -196,7 +189,6 @@ object RedeemManager {
         conn.requestMethod = "POST"
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json")
-        conn.setRequestProperty("Authorization", "Bearer $SUPABASE_ANON_KEY")
         conn.setRequestProperty("apikey", SUPABASE_ANON_KEY)
         
         val os = OutputStreamWriter(conn.outputStream)
