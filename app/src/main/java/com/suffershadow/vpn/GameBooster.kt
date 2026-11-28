@@ -712,8 +712,11 @@ private class OverlayController(
         val activity = OverlayContext.activity ?: return // Activity bağlamı yoksa panel açılmaz
 
         val view = ComposeView(activity).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
+    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+    // HATA ÇÖZÜMÜ BURADA: Lifecycle sahiplerini manuel atıyoruz
+    setViewTreeLifecycleOwner(activity)
+    setViewTreeSavedStateRegistryOwner(activity as androidx.activity.ComponentActivity)
+    setContent {
                 val stats = GameOverlayStats(
                     isVpnConnected = VpnState.status == VpnState.CONNECTED,
                     serverName = prefs.getString("active_name", "Bilinmiyor") ?: "Bilinmiyor",
