@@ -58,7 +58,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.toPx // Hata çözümü için eklendi
+// HATA ÇÖZÜMÜ İÇİN EKLENEN IMPORTLAR
+import androidx.compose.ui.unit.toPx
+import androidx.compose.material3.OutlinedTextFieldDefaults
+
 import kotlinx.coroutines.*
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
@@ -273,7 +276,7 @@ private fun protocolName(server: Server): String = when {
     else -> "Bilinmiyor"
 }
 
-// 🚀 YENİ PING RENK MANTIĞI (Senin istediğin eşiklere göre)
+// 🚀 YENİ PING RENK MANTIĞI (İstediğin eşiklere göre)
 private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Color> {
     val tm = lang == "tm"
     if (real && VpnState.delayMs >= 0) {
@@ -962,7 +965,7 @@ private fun HomeTab(
             contentAlignment = Alignment.CenterStart
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                // Bayrak Görseli (Hata almamak için width/height ayrı kullanıldı)
+                // Bayrak Görseli (Genişlik ve yükseklik ayrı verildi)
                 Box(Modifier.width(56.dp).height(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)), contentAlignment = Alignment.Center) {
                     Text("🌐", fontSize = 20.sp) 
                 }
@@ -1018,7 +1021,7 @@ private fun HomeTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 6. SUNUCULAR BUTONU (Görseldeki gibi kırmızı neon)
+        // 6. SUNUCULAR BUTONU (Kırmızı neon)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1078,7 +1081,7 @@ private fun ServersTab(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), 
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Geri Butonu (Neon Çerçeveli)
+            // Geri Butonu
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -1126,7 +1129,7 @@ private fun ServersTab(
                     .clickable { mainTab = 0 },
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (tm) "Otomatik" else "Otomatik", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Otomatik", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
             val isMainTab1 = mainTab == 1
             Box(
@@ -1136,11 +1139,11 @@ private fun ServersTab(
                     .clickable { mainTab = 1 },
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (tm) "Özel" else "Özel", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Özel", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
         }
 
-        // ALT KATEGORİ SEKMELERİ (Sosyal Medya ve PUBG - Sadece Otomatik'te görünür)
+        // ALT KATEGORİ SEKMELERİ (Sosyal Medya ve PUBG - Sadece Otomatik'te)
         if (mainTab == 0) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val isCat0 = categoryTab == 0
@@ -1175,12 +1178,12 @@ private fun ServersTab(
                     .clickable { showSubDialog = true },
                 contentAlignment = Alignment.Center
             ) {
-                Text(if (tm) "Abonelik Linki Ekle" else "Abonelik Linki Ekle", color = ShadowRedNeon, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Abonelik Linki Ekle", color = ShadowRedNeon, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
             Spacer(Modifier.height(8.dp))
         }
 
-        // LİSTE
+        // SUNUCU LİSTESİ
         if (currentList.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(30.dp),
@@ -1221,7 +1224,7 @@ private fun ServersTab(
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Bayrak Yer Tutucusu (Hata düzeltildi: width/height ayrı kullanıldı)
+                        // Bayrak Yer Tutucusu
                         Box(
                             modifier = Modifier.width(56.dp).height(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)),
                             contentAlignment = Alignment.Center
@@ -1251,7 +1254,7 @@ private fun ServersTab(
                                     Text("✕", color = Color(0xFFFF4658), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                 }
                             } else {
-                                // Görseldeki anten ikonu (Ping rengine göre)
+                                // Ping rengine göre anten simgesi
                                 val antennaColor = serverStatus(pingValue, isSelected && connected, lang).second
                                 Text("📶", fontSize = 20.sp, color = antennaColor)
                             }
