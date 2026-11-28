@@ -58,9 +58,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.toPx
-import androidx.compose.material3.OutlinedTextFieldDefaults
-
 import kotlinx.coroutines.*
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
@@ -83,7 +80,6 @@ internal val ShadowCardBg2 = Color(0xFF1A1C23)
 internal val ShadowRedNeon = Color(0xFFFF263D)
 internal val ShadowRedDeep = Color(0xFF9F1227)
 
-// Eski isimler (Kodun geri kalanı hata vermesin diye yeni renklere bağlandı)
 internal val BgDark = ShadowBgDark
 internal val BgTop = ShadowBgTop
 internal val CardBg = ShadowCardBg
@@ -275,7 +271,7 @@ private fun protocolName(server: Server): String = when {
     else -> "Bilinmiyor"
 }
 
-// 🚀 YENİ PING RENK MANTIĞI (İstediğin eşiklere göre)
+// 🚀 YENİ PING RENK MANTIĞI
 private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Color> {
     val tm = lang == "tm"
     if (real && VpnState.delayMs >= 0) {
@@ -285,15 +281,14 @@ private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Col
         return (if (tm) "Birikdi" else "Bağlandı") to AccentGreen
     }
     
-    // Ping değerine göre renk ve metin dönme
     return when {
         p == null || p <= 0 -> "Ölçülmedi" to TextMuted
         p == -2 -> "Ölçülüyor..." to TextMuted
         p == -1 -> (if (tm) "Port elýeterli däl" else "Port erişilemiyor") to Color(0xFFFF4658)
-        p <= 600 -> "TCP: $p ms" to Color(0xFF20E28B)       // Yeşil
-        p <= 1200 -> "TCP: $p ms" to Color(0xFFFFC247)      // Sarı
-        p <= 3000 -> "TCP: $p ms" to Color(0xFFFF4658)      // Kırmızı
-        else -> "TCP: $p ms" to Color(0xFF9F1227)           // Koyu Kırmızı
+        p <= 600 -> "TCP: $p ms" to Color(0xFF20E28B)
+        p <= 1200 -> "TCP: $p ms" to Color(0xFFFFC247)
+        p <= 3000 -> "TCP: $p ms" to Color(0xFFFF4658)
+        else -> "TCP: $p ms" to Color(0xFF9F1227)
     }
 }
 
@@ -964,7 +959,7 @@ private fun HomeTab(
             contentAlignment = Alignment.CenterStart
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                // Bayrak Görseli (Genişlik ve yükseklik ayrı verildi)
+                // Bayrak Görseli (Hata vermemesi için genişlik ve yükseklik ayrı verildi)
                 Box(Modifier.width(56.dp).height(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)), contentAlignment = Alignment.Center) {
                     Text("🌐", fontSize = 20.sp) 
                 }
@@ -1276,12 +1271,7 @@ private fun ServersTab(
                     onValueChange = { subUrlInput = it },
                     placeholder = { Text("https://.../sub/...") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = ShadowRedNeon,
-                        unfocusedBorderColor = Color(0xFF333333),
-                        cursorColor = ShadowRedNeon
-                    )
+                    modifier = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
@@ -1460,12 +1450,7 @@ private fun AuthDialog(
                         placeholder = { Text("61234567") },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
-                        enabled = !isLoading,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = ShadowRedNeon,
-                            unfocusedBorderColor = Color(0xFF333333),
-                            cursorColor = ShadowRedNeon
-                        )
+                        enabled = !isLoading
                     )
                 }
                 OutlinedTextField(
@@ -1474,12 +1459,7 @@ private fun AuthDialog(
                     label = { Text("Şifre") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = ShadowRedNeon,
-                        unfocusedBorderColor = Color(0xFF333333),
-                        cursorColor = ShadowRedNeon
-                    )
+                    enabled = !isLoading
                 )
                 if (isRegister) {
                     OutlinedTextField(
@@ -1488,12 +1468,7 @@ private fun AuthDialog(
                         label = { Text("Şifreyi Onayla") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isLoading,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = ShadowRedNeon,
-                            unfocusedBorderColor = Color(0xFF333333),
-                            cursorColor = ShadowRedNeon
-                        )
+                        enabled = !isLoading
                     )
                 }
                 if (errorMsg.isNotEmpty()) {
@@ -1861,6 +1836,9 @@ private fun GameToolsTab(
 ) {
     val tm = lang == "tm"
     var showBoosterScreen by remember { mutableStateOf(false) }
+    
+    // YENİ: Yatay GameSpace HUD Önizlemesi için state
+    var showGameSpaceHud by remember { mutableStateOf(false) }
 
     if (showBoosterScreen) {
         GameBoosterScreen(
@@ -1868,6 +1846,31 @@ private fun GameToolsTab(
             prefs = prefs,
             feedback = feedback,
             onClose = { showBoosterScreen = false }
+        )
+        return
+    }
+
+    // YENİ: GameSpace HUD Ekranı (Senin gönderdiğin tasarım)
+    if (showGameSpaceHud) {
+        val dummyStats = GameOverlayStats(
+            isVpnConnected = VpnState.status == VpnState.CONNECTED,
+            serverName = current?.name ?: "Germany",
+            pingMs = if (VpnState.delayMs >= 0) VpnState.delayMs else null,
+            jitterMs = if (BoosterState.jitterMs >= 0) BoosterState.jitterMs else null,
+            downloadRate = fmtRate(VpnState.rxBps),
+            uploadRate = fmtRate(VpnState.txBps),
+            batteryPercent = if (BoosterState.battPct >= 0) BoosterState.battPct else null,
+            cpuTemperatureC = if (BoosterState.battTempC >= 0f) BoosterState.battTempC else null,
+            ramUsagePercent = if (BoosterState.ramUsedPct >= 0) BoosterState.ramUsedPct else null,
+            freeRamMb = if (BoosterState.ramFreeMb >= 0) BoosterState.ramFreeMb else null,
+            vpnDuration = if (VpnState.status == VpnState.CONNECTED) "02:00:00" else "—",
+            gameMode = if (BoosterState.gameRunning) "Aktif" else "Beklemede"
+        )
+        
+        SufferShadowGameSpaceOverlay(
+            stats = dummyStats,
+            onMinimize = { showGameSpaceHud = false },
+            onClose = { showGameSpaceHud = false }
         )
         return
     }
@@ -1896,7 +1899,7 @@ private fun GameToolsTab(
         
         Spacer(Modifier.height(24.dp))
 
-        // GAME BOOSTER KARTI (Eski devasa mor kutu düzeltildi, artık siyah-kırmızı)
+        // GAME BOOSTER KARTI (Eski devasa mor kutu düzeltildi)
         BoosterHeroCard(
             lang = lang,
             prefs = prefs,
@@ -1918,6 +1921,27 @@ private fun GameToolsTab(
             Text(
                 text = if (tm) "GAME BOOSTER PANELINI AÇ" else "GAME BOOSTER PANELİNİ AÇ",
                 color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // YENİ: YATAY HUD (GAMESPACE) BUTONU
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(ShadowCardBg)
+                .border(1.dp, ShadowRedNeon, RoundedCornerShape(12.dp))
+                .clickable { feedback(FeedbackType.TAP); showGameSpaceHud = true },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (tm) "ÝATYK HUD GÖRNÜŞI (OÝUN)" else "YATAY HUD GÖRÜNÜMÜ (OYUN)",
+                color = ShadowRedNeon,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
             )
