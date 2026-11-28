@@ -1,5 +1,7 @@
 package com.suffershadow.vpn
 
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import android.animation.ValueAnimator
 import android.app.ActivityManager
 import android.app.AppOpsManager
