@@ -20,7 +20,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,9 +69,6 @@ import kotlin.math.cos
 import kotlin.math.sin
 import org.json.JSONArray
 
-// =====================================================================
-// YENİ SİYAH - NEON KIRMIZI RENK PALETİ
-// =====================================================================
 internal val ShadowBgDark = Color(0xFF050505)
 internal val ShadowBgTop = Color(0xFF0F0F11)
 internal val ShadowCardBg = Color(0xFF121418)
@@ -92,7 +88,6 @@ internal val RedSoft = Color(0xFFFF4658)
 internal val TextMuted = Color(0xFFA0A6B4)
 internal val BorderPurple = Color(0xFF9F1227)
 
-// VPS PROXY BAĞLANTISI
 private const val SUPABASE_URL = "http://46.8.225.27:8080"
 private const val SUPABASE_ANON_KEY = "sb_publishable_U8scDtQmhf830Pb5r65jxw_paP_dRRa"
 private const val VPS_AUTH_TOKEN = "suffer_shadow_gizli_anahtar_123"
@@ -123,7 +118,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        OverlayContext.activity = this // <--- OVERLAY İÇİN EKLENDİ
+        OverlayContext.activity = this
         handleNav(intent)
         setContent {
             SufferShadowTheme {
@@ -135,7 +130,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        OverlayContext.activity = null // <--- OVERLAY İÇİN EKLENDİ
+        OverlayContext.activity = null
         super.onDestroy()
     }
 }
@@ -148,10 +143,9 @@ data class Server(
     val isBuiltIn: Boolean = false,
     val category: String = "custom"
 )
+
 fun parseServer(raw: String, isBuiltIn: Boolean = false, category: String = "custom"): Server? {
     val link = raw.trim()
-    
-    // Abonelik linkleri HTTP/HTTPS ile başlar, bunları burada reddet.
     if (link.startsWith("http://") || link.startsWith("https://")) return null 
 
     return try {
@@ -180,8 +174,6 @@ fun parseServer(raw: String, isBuiltIn: Boolean = false, category: String = "cus
         null
     }
 }
-
-// Gelişmiş Abonelik İndirici
 fun fetchSubscriptionServers(url: String, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
@@ -233,7 +225,6 @@ fun pingServer(s: Server): Int {
     }
 }
 
-// VPS ÜZERİNDEN SUNUCU ÇEKME
 fun fetchRemoteServers(category: String, context: Context, onResult: (List<Server>) -> Unit) {
     thread {
         val list = mutableListOf<Server>()
@@ -277,7 +268,6 @@ private fun protocolName(server: Server): String = when {
     else -> "Bilinmiyor"
 }
 
-// 🚀 PING RENK MANTIĞI
 private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Color> {
     val tm = lang == "tm"
     if (real && VpnState.delayMs >= 0) {
@@ -296,6 +286,18 @@ private fun serverStatus(p: Int?, real: Boolean, lang: String): Pair<String, Col
         p <= 3000 -> "TCP: $p ms" to Color(0xFFFF4658)
         else -> "TCP: $p ms" to Color(0xFF9F1227)
     }
+}
+
+private fun calculateDaysLeft(endDateStr: String): Int {
+    return try {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val endDate = sdf.parse(endDateStr.substringBefore("."))
+        if (endDate != null) {
+            val diff = endDate.time - System.currentTimeMillis()
+            (diff / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
+        } else 0
+    } catch (e: Exception) { 0 }
 }
 
 @Composable
@@ -353,10 +355,15 @@ fun AppRoot() {
     val prefs = remember { context.getSharedPreferences("suffer", Context.MODE_PRIVATE) }
     var showVipScreen by remember { mutableStateOf(false) }
     var isVipUser by remember { mutableStateOf(false) }
+    var vipDaysLeft by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        val (isVip, _) = RedeemManager.checkVip(context)
+        val (isVip, endDateStr) = RedeemManager.checkVip(context)
         isVipUser = isVip
+        if (isVip && endDateStr != null) {
+            vipDaysLeft = calculateDaysLeft(endDateStr)
+        }
     }
 
     var lang by remember { mutableStateOf(prefs.getString("lang", "tr") ?: "tr") }
@@ -454,165 +461,163 @@ fun AppRoot() {
     val connect = rememberVpnConnect()
     val allServers = servers + builtInSocial + builtInPubg
     val toggleVpn = rememberVpnToggle { allServers.getOrNull(selected.coerceIn(0, (allServers.size - 1).coerceAtLeast(0))) }
-    
     val save: () -> Unit = {
-        prefs.edit()
-            .putString("links", servers.joinToString("\n") { it.link })
-            .putInt("sel", selected)
-            .apply()
-    }
+    prefs.edit()
+        .putString("links", servers.joinToString("\n") { it.link })
+        .putInt("sel", selected)
+        .apply()
+}
 
-    val measure: (Server) -> Unit = { server ->
-        pings[server.link] = -2
-        thread {
-            val result = pingServer(server)
-            Handler(Looper.getMainLooper()).post { pings[server.link] = result }
+val measure: (Server) -> Unit = { server ->
+    pings[server.link] = -2
+    thread {
+        val result = pingServer(server)
+        Handler(Looper.getMainLooper()).post { pings[server.link] = result }
+    }
+}
+
+LaunchedEffect(servers) { servers.forEach { measure(it) } }
+
+val selectedIndex = if (allServers.isEmpty()) -1 else selected.coerceIn(0, allServers.size - 1)
+val current = allServers.getOrNull(selectedIndex)
+
+LaunchedEffect(current?.link) {
+    prefs.edit()
+        .putString("active_name", current?.name ?: "")
+        .putString("active_host", current?.host ?: "")
+        .putInt("active_port", current?.port ?: 0)
+        .apply()
+}
+
+val gameState = remember { GameToolsState(prefs) }
+val gameScope = rememberCoroutineScope()
+
+LaunchedEffect(current?.link) {
+    gameState.history.clear()
+    gameState.backupDismissedFor = null
+    val target = current ?: return@LaunchedEffect
+    while (true) {
+        val ms = withContext(Dispatchers.IO) { pingServer(target) }
+        val now = System.currentTimeMillis()
+        gameState.history.add(GamePingSample(now, ms))
+        while (gameState.history.isNotEmpty() && gameState.history[0].timeMs < now - 30 * 60_000L) {
+            gameState.history.removeAt(0)
         }
+        delay(3000L)
     }
+}
 
-    LaunchedEffect(servers) { servers.forEach { measure(it) } }
-
-    val selectedIndex = if (allServers.isEmpty()) -1 else selected.coerceIn(0, allServers.size - 1)
-    val current = allServers.getOrNull(selectedIndex)
-
-    LaunchedEffect(current?.link) {
-        prefs.edit()
-            .putString("active_name", current?.name ?: "")
-            .putString("active_host", current?.host ?: "")
-            .putInt("active_port", current?.port ?: 0)
-            .apply()
+val failStreak = gameState.history.takeLastWhile { it.ms < 0 }.size
+val tunnelAlive = VpnState.status == VpnState.CONNECTED && VpnState.delayMs.toInt() >= 0
+val needBackup = gameState.suggestBackup && current != null && failStreak >= 5 && !tunnelAlive &&
+    gameState.backupDismissedFor != current.link
+LaunchedEffect(needBackup, current?.link) {
+    if (needBackup && current != null) {
+        val others = allServers.filter { it.link != current.link }.take(20)
+        gameState.backup = rankServers(others).firstOrNull { it.result.avg >= 0 && it.result.lossPct < 50 }
+    } else {
+        gameState.backup = null
     }
+}
 
-    val gameState = remember { GameToolsState(prefs) }
-    val gameScope = rememberCoroutineScope()
+BackHandler(enabled = showServers) { showServers = false }
 
-    LaunchedEffect(current?.link) {
-        gameState.history.clear()
-        gameState.backupDismissedFor = null
-        val target = current ?: return@LaunchedEffect
-        while (true) {
-            val ms = withContext(Dispatchers.IO) { pingServer(target) }
-            val now = System.currentTimeMillis()
-            gameState.history.add(GamePingSample(now, ms))
-            while (gameState.history.isNotEmpty() && gameState.history[0].timeMs < now - 30 * 60_000L) {
-                gameState.history.removeAt(0)
-            }
-            delay(3000L)
-        }
-    }
-
-    val failStreak = gameState.history.takeLastWhile { it.ms < 0 }.size
-    val tunnelAlive = VpnState.status == VpnState.CONNECTED && VpnState.delayMs.toInt() >= 0
-    val needBackup = gameState.suggestBackup && current != null && failStreak >= 5 && !tunnelAlive &&
-        gameState.backupDismissedFor != current.link
-    LaunchedEffect(needBackup, current?.link) {
-        if (needBackup && current != null) {
-            val others = allServers.filter { it.link != current.link }.take(20)
-            gameState.backup = rankServers(others).firstOrNull { it.result.avg >= 0 && it.result.lossPct < 50 }
+val onSelect: (Int) -> Unit = { index ->
+    feedback(FeedbackType.TAP)
+    selected = index
+    save()
+    showServers = false
+    val server = allServers.getOrNull(index)
+    if (server != null) {
+        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+            stopVpnService(context)
+            Handler(Looper.getMainLooper()).postDelayed({ connect(server) }, 900)
         } else {
-            gameState.backup = null
+            connect(server)
         }
     }
+}
 
-    BackHandler(enabled = showServers) { showServers = false }
-
-    val onSelect: (Int) -> Unit = { index ->
-        feedback(FeedbackType.TAP)
-        selected = index
+val onDelete: (Int) -> Unit = { index ->
+    feedback(FeedbackType.TAP)
+    val server = servers.getOrNull(index)
+    if (server != null) {
+        if (index == selectedIndex && (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING)) {
+            stopVpnService(context)
+        }
+        pings.remove(server.link)
+        servers.removeAt(index)
+        selected = when {
+            servers.isEmpty() -> 0
+            index < selected -> selected - 1
+            selected >= servers.size -> servers.size - 1
+            else -> selected
+        }
         save()
-        showServers = false
-        val server = allServers.getOrNull(index)
-        if (server != null) {
-            if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
-                stopVpnService(context)
-                Handler(Looper.getMainLooper()).postDelayed({ connect(server) }, 900)
-            } else {
-                connect(server)
+    }
+}
+
+val onAdd: () -> Unit = {
+    feedback(FeedbackType.TAP)
+    var added = 0
+    input.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
+        if (line.startsWith("http://") || line.startsWith("https://")) {
+            fetchSubscriptionServers(line) { fetchedList ->
+                var subAdded = 0
+                fetchedList.forEach { srv ->
+                    if (servers.none { it.link == srv.link }) {
+                        servers.add(srv)
+                        measure(srv)
+                        subAdded++
+                    }
+                }
+                if (subAdded > 0) {
+                    save()
+                    message = if (lang == "tm") "$subAdded serwer goşuldy (Abonelik)" else "$subAdded sunucu eklendi (Abonelik)"
+                } else {
+                    message = if (lang == "tm") "Abonelik boş" else "Abonelik boş veya zaten ekli."
+                }
+            }
+        } else {
+            val server = parseServer(line, isBuiltIn = false)
+            if (server != null && servers.none { it.link == server.link }) {
+                servers.add(server)
+                measure(server)
+                added++
             }
         }
     }
-
-    val onDelete: (Int) -> Unit = { index ->
-        feedback(FeedbackType.TAP)
-        val server = servers.getOrNull(index)
-        if (server != null) {
-            if (index == selectedIndex && (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING)) {
-                stopVpnService(context)
-            }
-            pings.remove(server.link)
-            servers.removeAt(index)
-            selected = when {
-                servers.isEmpty() -> 0
-                index < selected -> selected - 1
-                selected >= servers.size -> servers.size - 1
-                else -> selected
-            }
-            save()
-        }
-    }
-
-    val onAdd: () -> Unit = {
-        feedback(FeedbackType.TAP)
-        var added = 0
-        input.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
-            if (line.startsWith("http://") || line.startsWith("https://")) {
-                fetchSubscriptionServers(line) { fetchedList ->
-                    var subAdded = 0
-                    fetchedList.forEach { srv ->
-                        if (servers.none { it.link == srv.link }) {
-                            servers.add(srv)
-                            measure(srv)
-                            subAdded++
-                        }
-                    }
-                    if (subAdded > 0) {
-                        save()
-                        message = if (lang == "tm") "$subAdded serwer goşuldy (Abonelik)" else "$subAdded sunucu eklendi (Abonelik)"
-                    } else {
-                        message = if (lang == "tm") "Abonelik boş" else "Abonelik boş veya zaten ekli."
-                    }
-                }
-            } else {
-                val server = parseServer(line, isBuiltIn = false)
-                if (server != null && servers.none { it.link == server.link }) {
-                    servers.add(server)
-                    measure(server)
-                    added++
-                }
-            }
-        }
-        if (added > 0) {
-            input = ""
-            save()
-            message = if (lang == "tm") "$added serwer goşuldy" else "$added sunucu eklendi"
-        } else if (!input.contains("http")) {
-            message = if (lang == "tm") "Goşup bolmady." else "Eklenemedi."
-        }
+    if (added > 0) {
         input = ""
+        save()
+        message = if (lang == "tm") "$added serwer goşuldy" else "$added sunucu eklendi"
+    } else if (!input.contains("http")) {
+        message = if (lang == "tm") "Goşup bolmady." else "Eklenemedi."
     }
+    input = ""
+}
 
-    val switchToServer: (Server) -> Unit = { target ->
-        val idx = allServers.indexOfFirst { it.link == target.link }
-        if (idx >= 0) {
-            if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
-                onSelect(idx)
-                gameScope.launch {
-                    delay(15000L)
-                    if (VpnState.status != VpnState.CONNECTED) {
-                        android.widget.Toast.makeText(
-                            context,
-                            if (lang == "tm") "Ätiýaçlyk serwere geçip bolmady. Gaýtadan birikmegi synanyşyň." else "Yedek sunucuya geçilemedi. Tekrar bağlanmayı dene.",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-                    }
+val switchToServer: (Server) -> Unit = { target ->
+    val idx = allServers.indexOfFirst { it.link == target.link }
+    if (idx >= 0) {
+        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+            onSelect(idx)
+            gameScope.launch {
+                delay(15000L)
+                if (VpnState.status != VpnState.CONNECTED) {
+                    android.widget.Toast.makeText(
+                        context,
+                        if (lang == "tm") "Ätiýaçlyk serwere geçip bolmady. Gaýtadan birikmegi synanyşyň." else "Yedek sunucuya geçilemedi. Tekrar bağlanmayı dene.",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
                 }
-            } else {
-                selected = idx
-                save()
             }
+        } else {
+            selected = idx
+            save()
         }
     }
-
+}
     gameState.backup?.let { b ->
         GameBackupDialog(
             lang = lang,
@@ -635,11 +640,16 @@ fun AppRoot() {
             confirmButton = { TextButton(onClick = { sessionExpired = false }) { Text("OK", color = PurpleLight, fontWeight = FontWeight.Bold) } }
         )
     }
-        if (showVipScreen) {
+    
+    if (showVipScreen) {
         VipScreen(
             prefs = prefs,
             onVipActivated = {
                 isVipUser = true
+                scope.launch {
+                    val (_, end) = RedeemManager.checkVip(context)
+                    if (end != null) vipDaysLeft = calculateDaysLeft(end)
+                }
                 showVipScreen = false
             },
             onDismiss = { showVipScreen = false }
@@ -651,17 +661,16 @@ fun AppRoot() {
         containerColor = BgDark,
         contentColor = Color.White,
         bottomBar = {
-            // SİYAH - KIRMIZI NEON ALT MENÜ
             NavigationBar(
-                containerColor = ShadowBgTop, // Çok koyu siyah/gri arka plan
+                containerColor = ShadowBgTop,
                 contentColor = TextMuted,
                 tonalElevation = 0.dp
             ) {
                 val navColors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = ShadowRedNeon,      // Seçili ikon: Neon Kırmızı
-                    selectedTextColor = Color.White,        // Seçili yazı: Beyaz
-                    indicatorColor = Color(0xFF330000),     // Seçili arka plan kapsülü: Koyu Kırmızı Cam
-                    unselectedIconColor = TextMuted,        // Seçili değilse: Gri
+                    selectedIconColor = ShadowRedNeon,
+                    selectedTextColor = Color.White,
+                    indicatorColor = Color(0xFF330000),
+                    unselectedIconColor = TextMuted,
                     unselectedTextColor = TextMuted
                 )
                 NavigationBarItem(
@@ -692,7 +701,6 @@ fun AppRoot() {
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                // ARKA PLAN RENGİ: Tamamen siyah ve hafif üstten koyu gri gradient
                 .background(Brush.verticalGradient(listOf(ShadowBgTop, ShadowBgDark, ShadowBgDark)))
         ) {
             when {
@@ -703,7 +711,12 @@ fun AppRoot() {
                     timeLeft = vpnTimeLeft,
                     everConnected = sessionWasConnected,
                     onToggle = {
-                        if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
+                        val isLoggedIn = prefs.getBoolean("is_logged_in", false)
+                        if (!isLoggedIn) {
+                            android.widget.Toast.makeText(context, "Lütfen önce giriş yapın!", android.widget.Toast.LENGTH_SHORT).show()
+                            tab = 2
+                            feedback(FeedbackType.ERROR)
+                        } else if (VpnState.status == VpnState.CONNECTED || VpnState.status == VpnState.CONNECTING) {
                             feedback(FeedbackType.DISCONNECT)
                             toggleVpn()
                         } else {
@@ -787,7 +800,8 @@ fun AppRoot() {
                     },
                     prefs = prefs,
                     feedback = feedback,
-                    onOpenVip = { showVipScreen = true }
+                    onOpenVip = { showVipScreen = true },
+                    vipDaysLeft = vipDaysLeft
                 )
                 else -> ProfileTab(prefs = prefs, feedback = feedback)
             }
@@ -808,7 +822,6 @@ private fun HomeTab(
     val connected = VpnState.status == VpnState.CONNECTED
     val busy = VpnState.status == VpnState.CONNECTING
 
-    // Süre formatlama
     val hours = timeLeft / 3600
     val minutes = (timeLeft % 3600) / 60
     val seconds = timeLeft % 60
@@ -825,7 +838,6 @@ private fun HomeTab(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                // Arka planda hafif bir kırmızı/siyah derinlik efekti
                 Brush.radialGradient(
                     colors = listOf(Color(0xFF1A0000), ShadowBgDark),
                     center = Offset(0.5f, 0.3f),
@@ -836,14 +848,12 @@ private fun HomeTab(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 1. ÜST BAŞLIK (Logo ve Metin)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // "S" Logosu (Neon Kırmızı Kutu)
                 Box(
                     modifier = Modifier
                         .size(50.dp)
@@ -861,7 +871,6 @@ private fun HomeTab(
                     Text("F A S T   V P N", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
                 }
             }
-            // Sağ üst ikonlar (Zil ve Ayar)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.size(36.dp).clip(CircleShape).background(ShadowCardBg).border(1.dp, Color(0xFF333333), CircleShape), contentAlignment = Alignment.Center) {
                     Text("🔔", fontSize = 16.sp)
@@ -874,7 +883,6 @@ private fun HomeTab(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 2. DURUM ÇUBUĞU
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -893,7 +901,6 @@ private fun HomeTab(
 
         Spacer(modifier = Modifier.height(30.dp))
 
-        // 3. DEV NEON BAĞLAN BUTONU (Dönen halkalar ve Işık Efekti)
         val infinite = rememberInfiniteTransition()
         val pulse by infinite.animateFloat(0.4f, 1f, infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse))
         val sweep by infinite.animateFloat(0f, 360f, infiniteRepeatable(tween(4000, easing = LinearEasing)))
@@ -908,9 +915,7 @@ private fun HomeTab(
                 .clickable { onToggle() }
                 .drawBehind {
                     val stroke = 2.dp.toPx()
-                    // Dış Işık
                     drawCircle(color = ShadowRedNeon.copy(alpha = pulse * 0.3f), style = Stroke(stroke * 3), radius = size.minDimension / 2)
-                    // Dönen Kırmızı Yay
                     drawArc(
                         color = ShadowRedNeon,
                         startAngle = sweep,
@@ -928,7 +933,6 @@ private fun HomeTab(
                 if (busy) {
                     CircularProgressIndicator(color = ShadowRedNeon, modifier = Modifier.size(56.dp), strokeWidth = 4.dp)
                 } else {
-                    // Power İkonu
                     Canvas(modifier = Modifier.size(56.dp)) {
                         val strokeW = 4.dp.toPx()
                         drawArc(color = ShadowRedNeon, startAngle = 135f, sweepAngle = 270f, useCenter = false, topLeft = Offset(strokeW, strokeW), size = Size(size.width - strokeW*2, size.height - strokeW*2), style = Stroke(width = strokeW, cap = StrokeCap.Round))
@@ -952,7 +956,6 @@ private fun HomeTab(
 
         Spacer(modifier = Modifier.height(30.dp))
 
-        // 4. SUNUCU KARTI (Bayraklı, Neon Kırmızı Çerçeveli)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -965,7 +968,6 @@ private fun HomeTab(
             contentAlignment = Alignment.CenterStart
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                // Bayrak Görseli (Genişlik ve yükseklik ayrı verildi)
                 Box(Modifier.width(56.dp).height(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)), contentAlignment = Alignment.Center) {
                     Text("🌐", fontSize = 20.sp) 
                 }
@@ -985,9 +987,7 @@ private fun HomeTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 5. ALT METRİK KARTLARI (TCP ve Bağlantı Durumu)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // TCP Kartı
             Box(
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(16.dp)
             ) {
@@ -1002,7 +1002,6 @@ private fun HomeTab(
                     }
                 }
             }
-            // Durum Kartı
             Box(
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(16.dp)
             ) {
@@ -1021,7 +1020,6 @@ private fun HomeTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 6. SUNUCULAR BUTONU (Kırmızı neon)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1041,7 +1039,7 @@ private fun HomeTab(
             }
         }
         
-        Spacer(Modifier.height(30.dp))
+        Spacer(modifier = Modifier.height(30.dp))
     }
 }
 @Composable
@@ -1062,8 +1060,8 @@ private fun ServersTab(
     val tm = lang == "tm"
     val connected = VpnState.status == VpnState.CONNECTED
     
-    var mainTab by remember { mutableStateOf(0) } // 0: Otomatik, 1: Özel
-    var categoryTab by remember { mutableStateOf(0) } // 0: Sosyal, 1: PUBG
+    var mainTab by remember { mutableStateOf(0) }
+    var categoryTab by remember { mutableStateOf(0) }
     var subUrlInput by remember { mutableStateOf("") }
     var showSubDialog by remember { mutableStateOf(false) }
 
@@ -1076,12 +1074,10 @@ private fun ServersTab(
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         
-        // ÜST BAŞLIK VE BUTONLAR
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), 
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Geri Butonu
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -1098,7 +1094,6 @@ private fun ServersTab(
             Text(if (tm) "Serwerler" else "Sunucular", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Spacer(modifier = Modifier.weight(1f))
             
-            // Güncelle ve Test Et Butonları
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
@@ -1119,7 +1114,6 @@ private fun ServersTab(
             }
         }
 
-        // SEKME BUTONLARI (Otomatik ve Özel)
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val isMainTab0 = mainTab == 0
             Box(
@@ -1143,7 +1137,6 @@ private fun ServersTab(
             }
         }
 
-        // ALT KATEGORİ SEKMELERİ (Sosyal Medya ve PUBG - Sadece Otomatik'te)
         if (mainTab == 0) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val isCat0 = categoryTab == 0
@@ -1169,7 +1162,6 @@ private fun ServersTab(
             }
         }
 
-        // ABONELİK EKLE BUTONU (Sadece Özel sekmesinde)
         if (mainTab == 1) {
             Spacer(Modifier.height(8.dp))
             Box(
@@ -1183,7 +1175,6 @@ private fun ServersTab(
             Spacer(Modifier.height(8.dp))
         }
 
-        // SUNUCU LİSTESİ
         if (currentList.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF2A0000), RoundedCornerShape(16.dp)).padding(30.dp),
@@ -1208,7 +1199,6 @@ private fun ServersTab(
                     val isSelected = globalIndex == selected
                     val pingValue = pings[server.link]
                     
-                    // Sunucu Kartı
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1224,7 +1214,6 @@ private fun ServersTab(
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Bayrak Yer Tutucusu
                         Box(
                             modifier = Modifier.width(56.dp).height(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)),
                             contentAlignment = Alignment.Center
@@ -1232,7 +1221,6 @@ private fun ServersTab(
 
                         Spacer(modifier = Modifier.width(16.dp))
 
-                        // İsim ve Protokol
                         Column(modifier = Modifier.weight(1f)) {
                             Text(server.name, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                             Spacer(modifier = Modifier.height(4.dp))
@@ -1244,7 +1232,6 @@ private fun ServersTab(
                             }
                         }
 
-                        // Sağ Taraf (Anten / Sil Butonu)
                         Column(horizontalAlignment = Alignment.End) {
                             if (!server.isBuiltIn) {
                                 Box(
@@ -1254,7 +1241,6 @@ private fun ServersTab(
                                     Text("✕", color = Color(0xFFFF4658), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                                 }
                             } else {
-                                // Ping rengine göre anten simgesi
                                 val antennaColor = serverStatus(pingValue, isSelected && connected, lang).second
                                 Text("📶", fontSize = 20.sp, color = antennaColor)
                             }
@@ -1265,7 +1251,6 @@ private fun ServersTab(
         }
     }
 
-    // ABONELİK DİYALOĞU
     if (showSubDialog) {
         AlertDialog(
             onDismissRequest = { showSubDialog = false },
@@ -1308,7 +1293,6 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Neon Kırmızı Logo
             Text("S", color = ShadowRedNeon, fontSize = 80.sp, fontWeight = FontWeight.Black)
             Text("SUFFER SHADOW", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
             Spacer(modifier = Modifier.height(40.dp))
@@ -1319,7 +1303,6 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             )
             Spacer(modifier = Modifier.height(20.dp))
             
-            // Giriş Yap Butonu (Kırmızı Neon)
             Box(
                 modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
                     .background(Brush.horizontalGradient(listOf(Color(0xFF9C1027), ShadowRedNeon)))
@@ -1329,7 +1312,6 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // Hesap Oluştur Butonu (Kenarlıklı Neon)
             Box(
                 modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
                     .background(ShadowCardBg).border(1.dp, ShadowRedNeon, RoundedCornerShape(12.dp))
@@ -1378,7 +1360,6 @@ private fun ProfileTab(prefs: android.content.SharedPreferences, feedback: (Feed
             
             Spacer(modifier = Modifier.height(30.dp))
             
-            // Çıkış Yap Butonu
             Box(
                 modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(12.dp))
                     .background(ShadowCardBg).border(1.dp, Color(0xFF333333), RoundedCornerShape(12.dp))
@@ -1715,29 +1696,6 @@ private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) 
 }
 
 @Composable
-private fun PowerGlyph(color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val stroke = 3.2.dp.toPx()
-        drawArc(
-            color = color,
-            startAngle = 135f,
-            sweepAngle = 270f,
-            useCenter = false,
-            topLeft = Offset(size.width * 0.16f, size.height * 0.16f),
-            size = Size(size.width * 0.68f, size.height * 0.68f),
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width / 2f, size.height * 0.08f),
-            end = Offset(size.width / 2f, size.height * 0.52f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-    }
-}
-
-@Composable
 fun SufferShadowTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -1817,6 +1775,7 @@ internal fun GameCard(content: @Composable ColumnScope.() -> Unit) {
         Column(Modifier.padding(16.dp), content = content)
     }
 }
+
 @Composable
 private fun GameToolsTab(
     lang: String,
@@ -1838,7 +1797,8 @@ private fun GameToolsTab(
     onClearMeasurements: () -> Unit,
     prefs: android.content.SharedPreferences,
     feedback: (FeedbackType) -> Unit,
-    onOpenVip: () -> Unit
+    onOpenVip: () -> Unit,
+    vipDaysLeft: Int
 ) {
     val tm = lang == "tm"
     var showBoosterScreen by remember { mutableStateOf(false) }
@@ -1856,11 +1816,10 @@ private fun GameToolsTab(
     Column(
         Modifier
             .fillMaxSize()
-            .background(ShadowBgDark) // Tamamen siyah arka plan
+            .background(ShadowBgDark)
             .verticalScroll(rememberScrollState())
             .padding(18.dp)
     ) {
-        // BAŞLIK
         Text(
             text = if (tm) "OÝUN MERKEZI" else "OYUN MERKEZİ",
             color = Color.White,
@@ -1870,14 +1829,40 @@ private fun GameToolsTab(
         )
         Text(
             text = if (tm) "Premium aýratynlyklar we kod ulanmak" else "Premium özellikler ve kod kullanımı",
-            color = ShadowRedNeon, // Mor yerine Neon Kırmızı
+            color = ShadowRedNeon,
             fontSize = 13.sp,
             letterSpacing = 1.sp
         )
         
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
 
-        // GAME BOOSTER KARTI (Eski devasa mor kutu BoosterUi içinde düzeltildi)
+        if (vipDaysLeft > 0) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Brush.horizontalGradient(listOf(Color(0xFF1A0505), ShadowRedDeep)))
+                    .border(1.dp, ShadowRedNeon, RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("💎 VIP Kalan Süre: $vipDaysLeft Gün", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        } else {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ShadowCardBg)
+                    .border(1.dp, Color.Gray, RoundedCornerShape(12.dp))
+                    .clickable { onOpenVip() }
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("⚠️ VIP Yok - Kullanmak İçin Tıkla", color = Color(0xFFFF4658), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
         BoosterHeroCard(
             lang = lang,
             prefs = prefs,
@@ -1886,7 +1871,6 @@ private fun GameToolsTab(
 
         Spacer(Modifier.height(16.dp))
 
-        // GAME BOOSTER PANEL BUTONU
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1906,7 +1890,6 @@ private fun GameToolsTab(
 
         Spacer(Modifier.height(24.dp))
 
-        // REDEEM / PREMIUM KARTI
         Box(
             modifier = Modifier
                 .fillMaxWidth()
