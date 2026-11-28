@@ -19,6 +19,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,8 +38,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -55,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.toPx // Hata çözümü için eklendi
 import kotlinx.coroutines.*
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
@@ -69,7 +73,6 @@ import org.json.JSONArray
 
 // =====================================================================
 // YENİ SİYAH - NEON KIRMIZI RENK PALETİ
-// (Eski mor değişkenler yeni kırmızı sisteme yönlendirildi ki kodun geri kalanı bozulmasın)
 // =====================================================================
 internal val ShadowBgDark = Color(0xFF050505)
 internal val ShadowBgTop = Color(0xFF0F0F11)
@@ -83,9 +86,9 @@ internal val BgDark = ShadowBgDark
 internal val BgTop = ShadowBgTop
 internal val CardBg = ShadowCardBg
 internal val CardBg2 = ShadowCardBg2
-internal val PurpleMain = ShadowRedNeon       // Mor yerine Neon Kırmızı
-internal val PurpleLight = Color(0xFFFF4658)  // Açık Mor yerine Parlak Kırmızı
-internal val PurpleDeep = ShadowRedDeep       // Koyu Mor yerine Koyu Kırmızı
+internal val PurpleMain = ShadowRedNeon
+internal val PurpleLight = Color(0xFFFF4658)
+internal val PurpleDeep = ShadowRedDeep
 internal val AccentGreen = Color(0xFF20E28B)  
 internal val RedSoft = Color(0xFFFF4658)
 internal val TextMuted = Color(0xFFA0A6B4)
@@ -912,7 +915,7 @@ private fun HomeTab(
                         useCenter = false,
                         style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
                         topLeft = Offset(4.dp.toPx(), 4.dp.toPx()),
-                        size = androidx.compose.ui.geometry.Size(size.width - 8.dp.toPx(), size.height - 8.dp.toPx())
+                        size = Size(size.width - 8.dp.toPx(), size.height - 8.dp.toPx())
                     )
                 }
                 .border(1.dp, ShadowRedNeon.copy(alpha = 0.5f), CircleShape),
@@ -923,9 +926,9 @@ private fun HomeTab(
                     CircularProgressIndicator(color = ShadowRedNeon, modifier = Modifier.size(56.dp), strokeWidth = 4.dp)
                 } else {
                     // Power İkonu
-                    androidx.compose.foundation.Canvas(modifier = Modifier.size(56.dp)) {
+                    Canvas(modifier = Modifier.size(56.dp)) {
                         val strokeW = 4.dp.toPx()
-                        drawArc(color = ShadowRedNeon, startAngle = 135f, sweepAngle = 270f, useCenter = false, topLeft = Offset(strokeW, strokeW), size = androidx.compose.ui.geometry.Size(size.width - strokeW*2, size.height - strokeW*2), style = Stroke(width = strokeW, cap = StrokeCap.Round))
+                        drawArc(color = ShadowRedNeon, startAngle = 135f, sweepAngle = 270f, useCenter = false, topLeft = Offset(strokeW, strokeW), size = Size(size.width - strokeW*2, size.height - strokeW*2), style = Stroke(width = strokeW, cap = StrokeCap.Round))
                         drawLine(color = ShadowRedNeon, start = Offset(size.width/2, 0f), end = Offset(size.width/2, size.height*0.5f), strokeWidth = strokeW, cap = StrokeCap.Round)
                     }
                 }
@@ -959,8 +962,8 @@ private fun HomeTab(
             contentAlignment = Alignment.CenterStart
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                // Bayrak Görseli (Şimdilik yer tutucu, sen drawable ekleyince resim çıkacak)
-                Box(Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)), contentAlignment = Alignment.Center) {
+                // Bayrak Görseli (Hata almamak için width/height ayrı kullanıldı)
+                Box(Modifier.width(56.dp).height(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)), contentAlignment = Alignment.Center) {
                     Text("🌐", fontSize = 20.sp) 
                 }
                 Spacer(modifier = Modifier.width(16.dp))
@@ -1056,7 +1059,7 @@ private fun ServersTab(
     val tm = lang == "tm"
     val connected = VpnState.status == VpnState.CONNECTED
     
-    var mainTab by remember { mutableStateOf(0) } // 0: Otomatik (İçindekiler), 1: Özel
+    var mainTab by remember { mutableStateOf(0) } // 0: Otomatik, 1: Özel
     var categoryTab by remember { mutableStateOf(0) } // 0: Sosyal, 1: PUBG
     var subUrlInput by remember { mutableStateOf("") }
     var showSubDialog by remember { mutableStateOf(false) }
@@ -1218,9 +1221,9 @@ private fun ServersTab(
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Bayrak Yer Tutucusu
+                        // Bayrak Yer Tutucusu (Hata düzeltildi: width/height ayrı kullanıldı)
                         Box(
-                            modifier = Modifier.size(width = 56.dp, height = 40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)),
+                            modifier = Modifier.width(56.dp).height(40.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF222222)),
                             contentAlignment = Alignment.Center
                         ) { Text("🌐", fontSize = 20.sp) }
 
@@ -1583,7 +1586,7 @@ internal fun PreferenceSwitchRow(title: String, subtitle: String, checked: Boole
     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             Text(subtitle, color = TextMuted, fontSize = 11.sp)
         }
         Switch(
@@ -1617,7 +1620,7 @@ internal fun StatusPill(text: String, color: Color) {
 internal fun InfoPill(modifier: Modifier = Modifier, title: String, subtitle: String) {
     Column(modifier.clip(RoundedCornerShape(12.dp)).background(ShadowCardBg).border(1.dp, Color(0xFF222222), RoundedCornerShape(12.dp)).padding(horizontal = 13.dp, vertical = 12.dp)) {
         Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
-        Spacer(Modifier.height(3.dp))
+        Spacer(modifier = Modifier.height(3.dp))
         Text(subtitle, color = TextMuted, fontSize = 11.sp, maxLines = 1)
     }
 }
@@ -1638,9 +1641,6 @@ internal fun NeonButton(
         onClick = onClick,
         contentAlignment = Alignment.Center
     ) {
-        if (secondary) {
-             androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
-        }
         Row(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 11.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             if (leading != null) {
                 Text(leading, color = if (secondary) ShadowRedNeon else Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1672,7 +1672,6 @@ internal fun AnimatedSurface(
         Modifier.clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
     } else Modifier
     
-    // KENARLIK VE GÖLGE (Eski mor çizgileri kırmızıya çevrildi)
     val borderModifier = if (brush == null && color == ShadowCardBg) Modifier.border(1.dp, Color(0xFF2A0000), shape) else Modifier
 
     Box(
@@ -1689,7 +1688,7 @@ internal fun AnimatedSurface(
 
 @Composable
 private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Canvas(modifier) {
+    Canvas(modifier) {
         val w = size.width
         val h = size.height
         val stroke = 2.1.dp.toPx()
@@ -1715,7 +1714,7 @@ private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) 
                 drawRoundRect(
                     color,
                     topLeft = Offset(w * 0.08f, h * 0.30f),
-                    size = androidx.compose.ui.geometry.Size(w * 0.84f, h * 0.44f),
+                    size = Size(w * 0.84f, h * 0.44f),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.2f, w * 0.2f),
                     style = style
                 )
@@ -1725,8 +1724,8 @@ private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) 
                 drawCircle(color, radius = w * 0.045f, center = Offset(w * 0.76f, h * 0.57f))
             }
             else -> {
-                drawCircle(color, radius = w * 0.17f, center = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.29f), style = style)
-                drawArc(color, 180f, 180f, false, androidx.compose.ui.geometry.Offset(w * 0.19f, h * 0.48f), androidx.compose.ui.geometry.Size(w * 0.62f, h * 0.48f), style = style)
+                drawCircle(color, radius = w * 0.17f, center = Offset(w * 0.5f, h * 0.29f), style = style)
+                drawArc(color, 180f, 180f, false, Offset(w * 0.19f, h * 0.48f), Size(w * 0.62f, h * 0.48f), style = style)
             }
         }
     }
@@ -1734,21 +1733,21 @@ private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) 
 
 @Composable
 private fun PowerGlyph(color: Color, modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Canvas(modifier) {
+    Canvas(modifier) {
         val stroke = 3.2.dp.toPx()
         drawArc(
             color = color,
             startAngle = 135f,
             sweepAngle = 270f,
             useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.16f, size.height * 0.16f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.68f, size.height * 0.68f),
+            topLeft = Offset(size.width * 0.16f, size.height * 0.16f),
+            size = Size(size.width * 0.68f, size.height * 0.68f),
             style = Stroke(width = stroke, cap = StrokeCap.Round)
         )
         drawLine(
             color = color,
-            start = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * 0.08f),
-            end = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * 0.52f),
+            start = Offset(size.width / 2f, size.height * 0.08f),
+            end = Offset(size.width / 2f, size.height * 0.52f),
             strokeWidth = stroke,
             cap = StrokeCap.Round
         )
